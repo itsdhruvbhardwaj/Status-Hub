@@ -5,11 +5,7 @@ plugins {
 
 android {
     namespace = "com.dhruv.statushub"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.dhruv.statushub"
@@ -40,6 +36,9 @@ android {
 }
 
 dependencies {
+    // AdMob
+    implementation(libs.play.services.ads)
+
     //view model
     implementation ("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1")
