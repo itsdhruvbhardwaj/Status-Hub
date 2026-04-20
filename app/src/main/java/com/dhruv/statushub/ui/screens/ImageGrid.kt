@@ -23,29 +23,24 @@ fun ImageGrid(
     mediaList: List<Uri>,
     onClick: (Uri) -> Unit
 ) {
-
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(4.dp)
     ) {
-
         items(mediaList) { uri ->
-
             Box(
                 modifier = Modifier
                     .padding(4.dp)
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(6.dp))
-                    .clickable { onClick(uri) } // ✅ click works
+                    .clickable { onClick(uri) }
             ) {
-
-                // 🖼 ONLY images (no video decoder)
                 AsyncImage(
                     model = uri,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop // 🔥 THIS FIXES EVERYTHING
+                    contentScale = ContentScale.Crop
                 )
             }
         }

@@ -1,12 +1,11 @@
 package com.dhruv.statushub.ui.screens
 
-import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,13 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -40,98 +35,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.documentfile.provider.DocumentFile
-import coil.compose.AsyncImage
-import com.dhruv.statushub.ui.components.VideoPlayer
+import com.dhruv.statushub.ui.components.AdBanner
+import com.dhruv.statushub.ui.components.InterstitialAdManager
+import com.dhruv.statushub.ui.components.MediaPreviewer
 import com.dhruv.statushub.ui.theme.StatusHubTheme
-import com.dhruv.statushub.utils.downloadMedia
 import com.dhruv.statushub.utils.getDownloadedMedia
-import com.google.android.gms.ads.AdError
-import com.google.android.gms.ads.AdRequest
-import com.google.android.gms.ads.AdSize
-import com.google.android.gms.ads.AdView
-import com.google.android.gms.ads.FullScreenContentCallback
-import com.google.android.gms.ads.LoadAdError
-import com.google.android.gms.ads.interstitial.InterstitialAd
-import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.dhruv.statushub.utils.getSavedFolderUri
+import com.dhruv.statushub.utils.saveFolderUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-// ================= AD COMPONENT =================
-
-@Composable
-fun AdBanner(modifier: Modifier = Modifier) {
-    AndroidView(
-        factory = { context ->
-            AdView(context).apply {
-                setAdSize(AdSize.BANNER)
-                // Real Ad Unit ID
-                adUnitId = "ca-app-pub-3940256099942544/6300978111"
-                loadAd(AdRequest.Builder().build())
-            }
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .height(50.dp) // Ensures visibility once ads start filling
-    )
-}
-
-// Interstitial Ad Helper
-class InterstitialAdManager(private val context: Context) {
-    private var interstitialAd: InterstitialAd? = null
-
-    fun loadAd() {
-        val adRequest = AdRequest.Builder().build()
-        // Real Interstitial Ad Unit ID
-        InterstitialAd.load(context, "ca-app-pub-3940256099942544/1033173712", adRequest, object : InterstitialAdLoadCallback() {
-            override fun onAdFailedToLoad(adError: LoadAdError) {
-                interstitialAd = null
-            }
-
-            override fun onAdLoaded(ad: InterstitialAd) {
-                interstitialAd = ad
-            }
-        })
-    }
-
-    fun showAd(activity: Activity, onAdDismissed: () -> Unit) {
-        if (interstitialAd != null) {
-            interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
-                override fun onAdDismissedFullScreenContent() {
-                    interstitialAd = null
-                    loadAd() // Load next one
-                    onAdDismissed()
-                }
-
-                override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                    interstitialAd = null
-                    onAdDismissed()
-                }
-            }
-            interstitialAd?.show(activity)
-        } else {
-            onAdDismissed()
-        }
-    }
-}
-
-// ================= STORAGE =================
-
-fun saveFolderUri(context: Context, uri: Uri) {
-    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
-    prefs.edit().putString("folder_uri", uri.toString()).apply()
-}
-
-fun getSavedFolderUri(context: Context): Uri? {
-    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
-    val uriString = prefs.getString("folder_uri", null)
-    return uriString?.let { Uri.parse(it) }
-}
-
-// ================= MAIN SCREEN =================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,6 +70,13 @@ fun HomeScreen() {
 
     var isRefreshing by remember { mutableStateOf(false) }
     val pullToRefreshState = rememberPullToRefreshState()
+
+    // Multiple selection state
+    val selectedItems = remember { mutableStateOf(setOf<Uri>()) }
+    val isSelectionMode = selectedItems.value.isNotEmpty()
+    
+    // Alert Dialog state
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     // Initialize Interstitial Ad
     LaunchedEffect(Unit) {
@@ -282,7 +204,31 @@ fun HomeScreen() {
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) {
             downloadedList = getDownloadedMedia(context)
+        } else {
+            selectedItems.value = emptySet()
         }
+    }
+
+    // Handle delete action
+    val deleteSelectedItems = {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                selectedItems.value.forEach { uri ->
+                    try {
+                        context.contentResolver.delete(uri, null, null)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+            selectedItems.value = emptySet()
+            downloadedList = getDownloadedMedia(context)
+            Toast.makeText(context, "Deleted selected items", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    BackHandler(isSelectionMode) {
+        selectedItems.value = emptySet()
     }
 
     // ================= UI =================
@@ -293,17 +239,27 @@ fun HomeScreen() {
                 Surface(shadowElevation = 4.dp) {
                     TopAppBar(
                         title = {
-                            Text(
-                                text = "Status Hub",
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Cursive,
-                                fontSize = 28.sp,
-                                color = Color.Black
-                            )
+                            if (isSelectionMode) {
+                                Text("${selectedItems.value.size} Selected", fontWeight = FontWeight.Bold)
+                            } else {
+                                Text(
+                                    text = "Status Hub",
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Cursive,
+                                    fontSize = 28.sp,
+                                    color = Color.Black
+                                )
+                            }
                         },
                         actions = {
-                            IconButton(onClick = { launchFolderPicker() }) {
-                                Icon(Icons.Default.FolderOpen, contentDescription = "Change Folder", tint = Color.Black)
+                            if (isSelectionMode) {
+                                IconButton(onClick = { showDeleteDialog = true }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Black)
+                                }
+                            } else {
+                                IconButton(onClick = { launchFolderPicker() }) {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = "Change Folder", tint = Color.Black)
+                                }
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -320,7 +276,6 @@ fun HomeScreen() {
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
-                // Content with Pull to Refresh
                 PullToRefreshBox(
                     isRefreshing = isRefreshing,
                     onRefresh = {
@@ -382,9 +337,7 @@ fun HomeScreen() {
                                                     }
                                                 } else {
                                                     ImageGrid(imageList) { uri ->
-                                                        adManager.showAd(context as Activity) {
-                                                            selectedMedia = uri
-                                                        }
+                                                        selectedMedia = uri
                                                     }
                                                 }
                                             }
@@ -393,9 +346,7 @@ fun HomeScreen() {
                                                     Text("No videos found", modifier = Modifier.align(Alignment.Center), color = Color.Gray)
                                                 } else {
                                                     VideoGrid(videoList) { uri ->
-                                                        adManager.showAd(context as Activity) {
-                                                            selectedMedia = uri
-                                                        }
+                                                        selectedMedia = uri
                                                     }
                                                 }
                                             }
@@ -403,9 +354,28 @@ fun HomeScreen() {
                                                 if (downloadedList.isEmpty()) {
                                                     Text("No downloads yet.", modifier = Modifier.align(Alignment.Center), color = Color.Gray)
                                                 } else {
-                                                    MediaGrid(downloadedList) { uri ->
-                                                        selectedMedia = uri
-                                                    }
+                                                    MediaGrid(
+                                                        mediaList = downloadedList,
+                                                        selectedItems = selectedItems.value,
+                                                        onItemClick = { uri ->
+                                                            if (isSelectionMode) {
+                                                                if (selectedItems.value.contains(uri)) {
+                                                                    selectedItems.value -= uri
+                                                                } else {
+                                                                    selectedItems.value += uri
+                                                                }
+                                                            } else {
+                                                                selectedMedia = uri
+                                                            }
+                                                        },
+                                                        onItemLongClick = { uri ->
+                                                            if (selectedItems.value.contains(uri)) {
+                                                                selectedItems.value -= uri
+                                                            } else {
+                                                                selectedItems.value += uri
+                                                            }
+                                                        }
+                                                    )
                                                 }
                                             }
                                         }
@@ -454,67 +424,71 @@ fun HomeScreen() {
                         }
                     }
                 }
-
-                // Real Banner Ad
-                AdBanner(modifier = Modifier.background(Color.White))
+                // Standard Banner Ad (Will collapse if not loaded)
+                AdBanner()
             }
+        }
+
+        // Delete Confirmation Dialog
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(28.dp),
+                title = { 
+                    Text(
+                        text = "Delete Downloads", 
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    ) 
+                },
+                text = { 
+                    Text(
+                        text = "Are you sure you want to delete ${selectedItems.value.size} items?",
+                        color = Color.Black
+                    ) 
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            deleteSelectedItems()
+                            showDeleteDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Black,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteDialog = false }
+                    ) {
+                        Text("Cancel", color = Color.Gray)
+                    }
+                }
+            )
         }
 
         // ================= FULLSCREEN PREVIEW =================
         selectedMedia?.let { uri ->
-            val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true || 
-                         uri.toString().lowercase().contains(".mp4") ||
-                         uri.toString().lowercase().contains(".mkv") ||
-                         uri.toString().lowercase().contains(".3gp") ||
-                         uri.toString().lowercase().contains(".mov")
-
-            BackHandler { selectedMedia = null }
-
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                val currentList = when {
-                    selectedTab == 2 -> downloadedList
-                    isVideo -> videoList
-                    else -> imageList
-                }
-                val currentIndex = currentList.indexOf(uri)
-                val pagerState = rememberPagerState(
-                    initialPage = currentIndex.coerceAtLeast(0),
-                    pageCount = { currentList.size }
-                )
-
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    val itemUri = currentList[page]
-                    val itemMime = context.contentResolver.getType(itemUri)?.lowercase() ?: ""
-                    val isItemVideo = itemMime.startsWith("video") || itemUri.toString().lowercase().contains(".mp4")
-
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        if (isItemVideo) {
-                            VideoPlayer(uri = itemUri, modifier = Modifier.fillMaxSize())
-                        } else {
-                            AsyncImage(model = itemUri, contentDescription = null, modifier = Modifier.fillMaxSize())
-                        }
-
-                        if (selectedTab != 2) {
-                            Box(
-                                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 40.dp).size(56.dp)
-                                    .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.7f))
-                                    .clickable { downloadMedia(context, itemUri) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = "Download", tint = Color.White, modifier = Modifier.size(28.dp))
-                            }
-                        }
-                    }
-                }
-
-                IconButton(
-                    onClick = { selectedMedia = null },
-                    modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp).statusBarsPadding()
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape).size(48.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White, modifier = Modifier.size(24.dp))
-                }
+            val currentList = when {
+                selectedTab == 2 -> downloadedList
+                context.contentResolver.getType(uri)?.startsWith("video") == true || 
+                uri.toString().lowercase().contains(".mp4") -> videoList
+                else -> imageList
             }
+
+            MediaPreviewer(
+                selectedMedia = uri,
+                mediaList = currentList,
+                onClose = { selectedMedia = null },
+                adManager = adManager,
+                showDownloadButton = selectedTab != 2
+            )
         }
     }
 }

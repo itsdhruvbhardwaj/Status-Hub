@@ -23,24 +23,19 @@ fun VideoGrid(
     mediaList: List<Uri>,
     onClick: (Uri) -> Unit
 ) {
-
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 80.dp)
+        contentPadding = PaddingValues(bottom = 80.dp, start = 4.dp, end = 4.dp, top = 4.dp)
     ) {
-
         items(mediaList) { uri ->
-
             Box(
                 modifier = Modifier
                     .padding(4.dp)
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(6.dp))
-                    .clickable { onClick(uri) } // ✅ IMPORTANT
+                    .clickable { onClick(uri) }
             ) {
-
-                // 🎥 Video thumbnail
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(uri)
@@ -51,7 +46,6 @@ fun VideoGrid(
                     contentScale = ContentScale.Crop
                 )
 
-                // ▶ Play icon overlay
                 Text(
                     text = "▶",
                     modifier = Modifier.align(Alignment.Center),
