@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -71,14 +73,13 @@ fun HomeScreen() {
     var isRefreshing by remember { mutableStateOf(false) }
     val pullToRefreshState = rememberPullToRefreshState()
 
-    // Multiple selection state
     val selectedItems = remember { mutableStateOf(setOf<Uri>()) }
     val isSelectionMode = selectedItems.value.isNotEmpty()
     
-    // Alert Dialog state
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showPermissionInfoDialog by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
 
-    // Initialize Interstitial Ad
     LaunchedEffect(Unit) {
         adManager.loadAd()
     }
@@ -99,22 +100,18 @@ fun HomeScreen() {
     }
 
     val launchFolderPicker = {
-        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val initialUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val authority = "com.android.externalstorage.documents"
             val documentId = "primary:Android/media/com.whatsapp/WhatsApp/Media"
-            val uri = DocumentsContract.buildTreeDocumentUri(authority, documentId)
-            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                putExtra(DocumentsContract.EXTRA_INITIAL_URI, uri)
-            }
-        } else {
-            Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-        }
-        folderPicker.launch(null)
+            DocumentsContract.buildTreeDocumentUri(authority, documentId)
+        } else null
+        
+        folderPicker.launch(initialUri)
     }
 
     LaunchedEffect(Unit) {
         if (folderUri == null) {
-            launchFolderPicker()
+            showPermissionInfoDialog = true
         }
     }
 
@@ -209,7 +206,6 @@ fun HomeScreen() {
         }
     }
 
-    // Handle delete action
     val deleteSelectedItems = {
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -260,10 +256,48 @@ fun HomeScreen() {
                                 IconButton(onClick = { launchFolderPicker() }) {
                                     Icon(Icons.Default.FolderOpen, contentDescription = "Change Folder", tint = Color.Black)
                                 }
+                                Box {
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "More Options", tint = Color.Black)
+                                    }
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false },
+                                        containerColor = Color.White
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("How to Use / Help", color = Color.Black) },
+                                            onClick = {
+                                                showMenu = false
+                                                showPermissionInfoDialog = true
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Privacy Policy", color = Color.Black) },
+                                            onClick = {
+                                                showMenu = false
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
+                                                context.startActivity(intent)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Share App", color = Color.Black) },
+                                            onClick = {
+                                                showMenu = false
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_SUBJECT, "Status Hub App")
+                                                    putExtra(Intent.EXTRA_TEXT, "Check out this amazing WhatsApp Status Saver app!")
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.White,
+                            containerColor = Color(0xFFE6E0FF),
                             titleContentColor = Color.Black
                         )
                     )
@@ -303,12 +337,23 @@ fun HomeScreen() {
                                 verticalArrangement = Arrangement.Center,
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("Permission Required", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center)
+                                Icon(
+                                    imageVector = Icons.Default.Info, 
+                                    contentDescription = null, 
+                                    modifier = Modifier.size(48.dp), 
+                                    tint = Color.Gray
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                Text("Permission Required", fontWeight = FontWeight.Bold, fontSize = 20.sp, textAlign = TextAlign.Center, color = Color.Black)
                                 Spacer(Modifier.height(8.dp))
-                                Text("To view statuses, please select the WhatsApp Statuses folder.\n\nPath: Android > media > com.whatsapp > WhatsApp > Media > .Statuses", textAlign = TextAlign.Center, color = Color.Gray)
+                                Text("Grant permission to the WhatsApp Statuses folder to start viewing media.", textAlign = TextAlign.Center, color = Color.DarkGray)
                                 Spacer(Modifier.height(24.dp))
-                                Button(onClick = { launchFolderPicker() }) {
-                                    Text("Select Folder")
+                                Button(
+                                    onClick = { showPermissionInfoDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
+                                    shape = RoundedCornerShape(50)
+                                ) {
+                                    Text("Grant Permission", color = Color.White)
                                 }
                             }
                         } else {
@@ -424,29 +469,67 @@ fun HomeScreen() {
                         }
                     }
                 }
-                // Standard Banner Ad (Will collapse if not loaded)
                 AdBanner()
             }
         }
 
-        // Delete Confirmation Dialog
+        // ================= IMPROVED PERMISSION DIALOG =================
+        if (showPermissionInfoDialog) {
+            AlertDialog(
+                onDismissRequest = { showPermissionInfoDialog = false },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(28.dp),
+                title = { 
+                    Text(
+                        text = "Follow these steps", 
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    ) 
+                },
+                text = { 
+                    Column {
+                        Text("1. Click the button below.", color = Color.Black)
+                        Spacer(Modifier.height(8.dp))
+                        Text("2. Look for the folder named '.Statuses'.", color = Color.Black)
+                        Spacer(Modifier.height(8.dp))
+                        Text("3. Click 'USE THIS FOLDER' at the bottom of your screen.", color = Color.Black, fontWeight = FontWeight.Bold)
+                        
+                        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color.LightGray)
+                        
+                        Text("Note: If you don't see the folder, it's located at:", fontSize = 12.sp, color = Color.Gray)
+                        Text("Android > media > com.whatsapp > WhatsApp > Media > .Statuses", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showPermissionInfoDialog = false
+                            launchFolderPicker()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text("Grant Permission", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPermissionInfoDialog = false }) {
+                        Text("Not Now", color = Color.Black.copy(alpha = 0.6f))
+                    }
+                }
+            )
+        }
+
         if (showDeleteDialog) {
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
                 containerColor = Color.White,
                 shape = RoundedCornerShape(28.dp),
                 title = { 
-                    Text(
-                        text = "Delete Downloads", 
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold
-                    ) 
+                    Text(text = "Delete Downloads", color = Color.Black, fontWeight = FontWeight.Bold) 
                 },
                 text = { 
-                    Text(
-                        text = "Are you sure you want to delete ${selectedItems.value.size} items?",
-                        color = Color.Black
-                    ) 
+                    Text(text = "Are you sure you want to delete ${selectedItems.value.size} items?", color = Color.Black) 
                 },
                 confirmButton = {
                     Button(
@@ -454,26 +537,20 @@ fun HomeScreen() {
                             deleteSelectedItems()
                             showDeleteDialog = false
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Black,
-                            contentColor = Color.White
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
                         shape = RoundedCornerShape(50)
                     ) {
                         Text("Delete")
                     }
                 },
                 dismissButton = {
-                    TextButton(
-                        onClick = { showDeleteDialog = false }
-                    ) {
-                        Text("Cancel", color = Color.Gray)
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text("Cancel", color = Color.Black.copy(alpha = 0.6f))
                     }
                 }
             )
         }
 
-        // ================= FULLSCREEN PREVIEW =================
         selectedMedia?.let { uri ->
             val currentList = when {
                 selectedTab == 2 -> downloadedList

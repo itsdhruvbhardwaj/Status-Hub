@@ -13,3 +13,13 @@ fun getSavedFolderUri(context: Context): Uri? {
     val uriString = prefs.getString("folder_uri", null)
     return uriString?.let { Uri.parse(it) }
 }
+
+fun isOnboardingComplete(context: Context): Boolean {
+    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
+    return prefs.getBoolean("onboarding_complete", false)
+}
+
+fun setOnboardingComplete(context: Context) {
+    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
+    prefs.edit().putBoolean("onboarding_complete", true).apply()
+}
