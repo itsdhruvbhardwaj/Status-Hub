@@ -44,6 +44,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.dhruv.status.hub.ui.components.AdBanner
 import com.dhruv.status.hub.ui.components.InterstitialAdManager
 import com.dhruv.status.hub.ui.components.MediaPreviewer
+import com.dhruv.status.hub.ui.components.DownloadedMediaPreviewer
 import com.dhruv.status.hub.utils.getDownloadedMedia
 import com.dhruv.status.hub.utils.getSavedFolderUri
 import com.dhruv.status.hub.utils.saveFolderUri
@@ -593,20 +594,38 @@ fun HomeScreen() {
         }
 
         selectedMedia?.let { uri ->
-            val currentList = when {
-                selectedTab == 2 -> downloadedList
-                context.contentResolver.getType(uri)?.startsWith("video") == true || 
-                uri.toString().lowercase().contains(".mp4") -> videoList
-                else -> imageList
-            }
+            if (selectedTab == 2) {
+                DownloadedMediaPreviewer(
+                    selectedMedia = uri,
+                    mediaList = downloadedList,
+                    onClose = { selectedMedia = null },
+                    onDelete = { deleteUri ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    context.contentResolver.delete(deleteUri, null, null)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                            downloadedList = getDownloadedMedia(context)
+                            selectedMedia = null
+                            Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            } else {
+                val currentList = if (context.contentResolver.getType(uri)?.startsWith("video") == true || 
+                    uri.toString().lowercase().contains(".mp4")) videoList else imageList
 
-            MediaPreviewer(
-                selectedMedia = uri,
-                mediaList = currentList,
-                onClose = { selectedMedia = null },
-                adManager = adManager,
-                showDownloadButton = selectedTab != 2
-            )
+                MediaPreviewer(
+                    selectedMedia = uri,
+                    mediaList = currentList,
+                    onClose = { selectedMedia = null },
+                    adManager = adManager,
+                    showDownloadButton = true
+                )
+            }
         }
     }
 }

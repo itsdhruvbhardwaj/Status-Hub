@@ -60,7 +60,7 @@ fun MediaPreviewer(
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(end = 20.dp, bottom = 40.dp)
+                            .padding(end = 24.dp, bottom = 80.dp)
                             .size(56.dp)
                             .clip(RoundedCornerShape(50))
                             .background(Color.Black.copy(alpha = 0.7f))
