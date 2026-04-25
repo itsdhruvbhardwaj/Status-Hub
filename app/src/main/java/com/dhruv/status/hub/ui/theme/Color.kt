@@ -2,10 +2,17 @@ package com.dhruv.status.hub.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// Indigo Dark Palette
+val Indigo80 = Color(0xFFAEC6FF)
+val IndigoGrey80 = Color(0xFFBEC6DC)
+val IndigoPink80 = Color(0xFFDEBCDF)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Indigo Light Palette
+val Indigo40 = Color(0xFF3458A2)
+val IndigoGrey40 = Color(0xFF585E71)
+val IndigoPink40 = Color(0xFF735776)
+
+// Neutral Colors
+val BackgroundDark = Color(0xFF000000)
+val SurfaceDark = Color(0xFF1A1C1E)
+val BackgroundLight = Color(0xFFFDFBFF)

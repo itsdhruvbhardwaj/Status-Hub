@@ -23,3 +23,23 @@ fun setOnboardingComplete(context: Context) {
     val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
     prefs.edit().putBoolean("onboarding_complete", true).apply()
 }
+
+fun isAutoSaveEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
+    return prefs.getBoolean("auto_save", false)
+}
+
+fun setAutoSaveEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
+    prefs.edit().putBoolean("auto_save", enabled).apply()
+}
+
+fun isDarkModeEnabled(context: Context): Boolean {
+    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
+    return prefs.getBoolean("dark_mode", false)
+}
+
+fun setDarkModeEnabled(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
+    prefs.edit().putBoolean("dark_mode", enabled).apply()
+}

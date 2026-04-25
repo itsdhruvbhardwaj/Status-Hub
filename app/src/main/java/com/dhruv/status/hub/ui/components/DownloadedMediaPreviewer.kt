@@ -135,7 +135,7 @@ fun DownloadedMediaPreviewer(
         Dialog(onDismissRequest = { showDeleteDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
             ) {
                 Column(
@@ -143,7 +143,7 @@ fun DownloadedMediaPreviewer(
                 ) {
                     Text(
                         text = "Delete this ${if (isCurrentVideo) "video" else "image"}?",
-                        color = Color.Black,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Normal
                     )
@@ -156,7 +156,7 @@ fun DownloadedMediaPreviewer(
                         TextButton(
                             onClick = { showDeleteDialog = false }
                         ) {
-                            Text("Cancel", color = Color.Black.copy(alpha = 0.7f), fontSize = 16.sp)
+                            Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 16.sp)
                         }
                         
                         Button(
@@ -164,11 +164,14 @@ fun DownloadedMediaPreviewer(
                                 showDeleteDialog = false
                                 onDelete(currentUri)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
                             shape = RoundedCornerShape(50),
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp)
                         ) {
-                            Text("Delete", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Delete", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     }
                 }
