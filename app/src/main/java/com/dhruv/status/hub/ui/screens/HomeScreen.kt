@@ -33,11 +33,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.dhruv.status.hub.ui.components.*
-import com.dhruv.status.hub.utils.getDownloadedMedia
-import com.dhruv.status.hub.utils.getSavedFolderUri
-import com.dhruv.status.hub.utils.saveFolderUri
+import com.dhruv.status.hub.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,7 +70,6 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
     
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
-    var showMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         adManager.loadAd()
@@ -116,6 +114,9 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                     if (docFile != null && docFile.canRead()) {
                         val images = mutableListOf<Uri>()
                         val videos = mutableListOf<Uri>()
+                        
+                        // Read setting directly from disk to ensure it's always current
+                        val autoSaveEnabled = isAutoSaveEnabled(context)
 
                         val statusFolder = when {
                             docFile.name?.contains("Statuses", ignoreCase = true) == true -> docFile
@@ -149,7 +150,13 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                         fileName.endsWith(".m4v") ||
                                         fileName.contains("vid_")
 
-                                if (isImage) images.add(file.uri) else if (isVideo) videos.add(file.uri)
+                                if (isImage) {
+                                    images.add(file.uri)
+                                    if (autoSaveEnabled) downloadMedia(context, file.uri, true)
+                                } else if (isVideo) {
+                                    videos.add(file.uri)
+                                    if (autoSaveEnabled) downloadMedia(context, file.uri, true)
+                                }
                             }
                         }
 
@@ -167,8 +174,15 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
         isLoadingFirstTime = false
     }
 
+    // Initial load and periodic refresh (every 60 seconds)
     LaunchedEffect(folderUri) {
-        loadData(false)
+        if (folderUri != null) {
+            loadData(false)
+            while (isActive) {
+                delay(60000) // Refresh every 1 minute
+                loadData(true) // Silent refresh
+            }
+        }
     }
 
     LaunchedEffect(selectedTab) {
@@ -199,7 +213,11 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
     if (showSettings) {
         SettingsScreen(
             onBack = { showSettings = false },
-            onThemeChange = onThemeChange
+            onThemeChange = onThemeChange,
+            onHelpClick = {
+                showSettings = false
+                showPermissionInfoDialog = true
+            }
         )
     } else {
         BackHandler(isSelectionMode) {
@@ -212,23 +230,8 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                     HomeTopBar(
                         isSelectionMode = isSelectionMode,
                         selectedCount = selectedItems.value.size,
-                        showMenu = showMenu,
-                        onMenuToggle = { showMenu = it },
                         onSettingsClick = { showSettings = true },
-                        onDeleteClick = { showDeleteDialog = true },
-                        onHelpClick = { showPermissionInfoDialog = true },
-                        onPrivacyPolicyClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, "http://sites.google.com/view/status-hub-privacy-policy/home".toUri())
-                            context.startActivity(intent)
-                        },
-                        onShareAppClick = {
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "Status Hub App")
-                                putExtra(Intent.EXTRA_TEXT, "Check out this amazing WhatsApp Status Saver app! Download it here: https://play.google.com/store/apps/details?id=${context.packageName}")
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share via"))
-                        }
+                        onDeleteClick = { showDeleteDialog = true }
                     )
                 }
             ) { innerPadding ->

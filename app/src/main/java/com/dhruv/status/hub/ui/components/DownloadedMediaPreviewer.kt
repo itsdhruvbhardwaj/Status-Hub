@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -51,87 +52,93 @@ fun DownloadedMediaPreviewer(
 
     BackHandler { onClose() }
 
-    val currentUri = mediaList[pagerState.currentPage]
-    val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
-            currentUri.toString().lowercase().contains(".mp4")
+    // Unified Layout to prevent sticking/jumping during swipes
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val itemUri = mediaList[page]
+            val isVideo = context.contentResolver.getType(itemUri)?.startsWith("video") == true ||
+                    itemUri.toString().lowercase().contains(".mp4")
 
-    if (isCurrentVideo) {
-        Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            Box(modifier = Modifier.weight(1f)) {
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    VideoPlayer(uri = mediaList[page], modifier = Modifier.fillMaxSize())
+            if (isVideo) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    VideoPlayer(uri = itemUri, modifier = Modifier.weight(1f))
+                    // This spacer reserves space at the bottom so the video controls 
+                    // (seek bar, etc) never overlap with the action bar.
+                    Spacer(modifier = Modifier.navigationBarsPadding().height(48.dp))
                 }
-
-                IconButton(
-                    onClick = { onClose() },
+            } else {
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 16.dp, start = 16.dp)
-                        .statusBarsPadding()
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                        .size(48.dp)
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { showControls = !showControls },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                    AsyncImage(
+                        model = itemUri,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
+        }
 
+        // --- Overlays ---
+
+        val currentUri = mediaList[pagerState.currentPage]
+        val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
+                currentUri.toString().lowercase().contains(".mp4")
+
+        // Dynamic background color for the Action Bar
+        val barBackground by animateColorAsState(
+            targetValue = if (isCurrentVideo) Color.Black else Color.Black.copy(alpha = 0.4f),
+            label = "barBackground"
+        )
+
+        // Top Back Button
+        AnimatedVisibility(
+            visible = showControls || isCurrentVideo,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            IconButton(
+                onClick = { onClose() },
+                modifier = Modifier
+                    .padding(top = 16.dp, start = 16.dp)
+                    .statusBarsPadding()
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .size(48.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+            }
+        }
+
+        // Bottom Action Bar
+        AnimatedVisibility(
+            visible = showControls || isCurrentVideo,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
             ActionBar(
                 uri = currentUri,
                 onDeleteClick = { showDeleteDialog = true },
-                background = Color.Black
+                background = barBackground
             )
-        }
-    } else {
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { showControls = !showControls }
-        ) {
-            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                AsyncImage(
-                    model = mediaList[page],
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-
-            AnimatedVisibility(
-                visible = showControls,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopStart)
-            ) {
-                IconButton(
-                    onClick = { onClose() },
-                    modifier = Modifier
-                        .padding(top = 16.dp, start = 16.dp)
-                        .statusBarsPadding()
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                        .size(48.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
-                }
-            }
-
-            AnimatedVisibility(
-                visible = showControls,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
-            ) {
-                ActionBar(
-                    uri = currentUri,
-                    onDeleteClick = { showDeleteDialog = true },
-                    background = Color.Black.copy(alpha = 0.4f)
-                )
-            }
         }
     }
 
     if (showDeleteDialog) {
+        val currentUri = mediaList[pagerState.currentPage]
+        val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
+                currentUri.toString().lowercase().contains(".mp4")
+
         Dialog(onDismissRequest = { showDeleteDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
@@ -148,14 +155,14 @@ fun DownloadedMediaPreviewer(
                         fontWeight = FontWeight.Normal
                     )
                     
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
-                            onClick = { showDeleteDialog = false }
-                        ) {
+                        TextButton(onClick = { showDeleteDialog = false }) {
                             Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 16.sp)
                         }
                         

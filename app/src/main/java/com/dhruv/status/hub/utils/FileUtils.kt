@@ -7,19 +7,32 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.InputStream
 
-fun downloadMedia(context: Context, uri: Uri) {
+fun downloadMedia(context: Context, uri: Uri, isAutoSave: Boolean = false) {
     val contentResolver = context.contentResolver
+    
+    // Get original filename to avoid duplicates during auto-save
+    val docFile = DocumentFile.fromSingleUri(context, uri)
+    val originalName = docFile?.name ?: "Status_${System.currentTimeMillis()}"
+    
     val mimeType = contentResolver.getType(uri) ?: if (uri.toString().contains(".mp4")) "video/mp4" else "image/jpeg"
     val extension = if (mimeType.startsWith("video")) "mp4" else "jpg"
-    val fileName = "Status_${System.currentTimeMillis()}.$extension"
+    
+    // Use original name if available, otherwise fallback
+    val fileName = if (originalName.contains(".")) originalName else "$originalName.$extension"
 
     try {
+        // For auto-save, check if already logged
+        if (isAutoSave && isFileAlreadyAutoSaved(context, fileName)) {
+            return
+        }
+
         val inputStream: InputStream? = contentResolver.openInputStream(uri)
         if (inputStream == null) {
-            Toast.makeText(context, "Failed to open status", Toast.LENGTH_SHORT).show()
+            if (!isAutoSave) Toast.makeText(context, "Failed to open status", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -43,13 +56,27 @@ fun downloadMedia(context: Context, uri: Uri) {
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
 
+        // Check if file already exists in MediaStore to avoid duplicates
+        val projection = arrayOf(MediaStore.MediaColumns._ID)
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+        val selectionArgs = arrayOf(fileName)
+        val cursor = contentResolver.query(collection, projection, selection, selectionArgs, null)
+        val alreadyExists = cursor?.use { it.count > 0 } ?: false
+
+        if (alreadyExists) {
+            if (isAutoSave) markFileAsAutoSaved(context, fileName)
+            inputStream.close()
+            return
+        }
+
         val destinationUri = contentResolver.insert(collection, contentValues)
 
         if (destinationUri != null) {
             contentResolver.openOutputStream(destinationUri).use { outputStream ->
                 if (outputStream != null) {
                     inputStream.copyTo(outputStream)
-                    Toast.makeText(context, "Saved to Gallery", Toast.LENGTH_SHORT).show()
+                    if (!isAutoSave) Toast.makeText(context, "Saved to Gallery", Toast.LENGTH_SHORT).show()
+                    if (isAutoSave) markFileAsAutoSaved(context, fileName)
                 }
             }
         }

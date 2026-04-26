@@ -43,3 +43,13 @@ fun setDarkModeEnabled(context: Context, enabled: Boolean) {
     val prefs = context.getSharedPreferences("statushub_prefs", Context.MODE_PRIVATE)
     prefs.edit().putBoolean("dark_mode", enabled).apply()
 }
+
+fun isFileAlreadyAutoSaved(context: Context, fileName: String): Boolean {
+    val prefs = context.getSharedPreferences("statushub_autosave_log", Context.MODE_PRIVATE)
+    return prefs.contains(fileName)
+}
+
+fun markFileAsAutoSaved(context: Context, fileName: String) {
+    val prefs = context.getSharedPreferences("statushub_autosave_log", Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(fileName, true).apply()
+}
