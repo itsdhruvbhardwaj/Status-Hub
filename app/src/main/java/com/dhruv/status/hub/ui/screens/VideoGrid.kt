@@ -18,6 +18,14 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.decode.VideoFrameDecoder
 
+/**
+ * VideoGrid Composable
+ * 
+ * Displays a 3-column grid of video thumbnails.
+ * 
+ * @param mediaList List of URIs for the videos to display.
+ * @param onClick Callback triggered when a video is tapped.
+ */
 @Composable
 fun VideoGrid(
     mediaList: List<Uri>,
@@ -26,6 +34,7 @@ fun VideoGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
+        // Padding bottom to avoid overlap with bottom navigation bar
         contentPadding = PaddingValues(bottom = 80.dp, start = 4.dp, end = 4.dp, top = 4.dp)
     ) {
         items(mediaList) { uri ->
@@ -36,16 +45,18 @@ fun VideoGrid(
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { onClick(uri) }
             ) {
+                // Use Coil with VideoFrameDecoder to extract a thumbnail from the video file
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(uri)
                         .decoderFactory(VideoFrameDecoder.Factory())
                         .build(),
-                    contentDescription = null,
+                    contentDescription = "Video thumbnail",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
 
+                // Overlay a play symbol to indicate the item is a video
                 Text(
                     text = "▶",
                     modifier = Modifier.align(Alignment.Center),

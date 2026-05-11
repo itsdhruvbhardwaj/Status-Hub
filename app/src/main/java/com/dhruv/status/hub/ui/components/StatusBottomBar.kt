@@ -18,12 +18,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+/**
+ * StatusBottomBar Composable
+ * 
+ * A custom pill-shaped bottom navigation bar that allows users to switch
+ * between "Images", "Videos", and "Downloads" tabs.
+ * 
+ * @param selectedTab The index of the currently active tab.
+ * @param tabs List of strings representing tab titles.
+ * @param onTabSelected Callback invoked when a tab is clicked.
+ */
 @Composable
 fun StatusBottomBar(
     selectedTab: Int,
     tabs: List<String>,
     onTabSelected: (Int) -> Unit
 ) {
+    // Outer container with shadow and rounded corners for a floating effect
     Row(
         modifier = Modifier
             .padding(horizontal = 12.dp, vertical = 20.dp)
@@ -36,7 +47,9 @@ fun StatusBottomBar(
     ) {
         tabs.forEachIndexed { index, title ->
             val isSelected = selectedTab == index
+            // Highlight color for the selected tab
             val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+            
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -44,6 +57,7 @@ fun StatusBottomBar(
                     .clip(RoundedCornerShape(50))
                     .background(color = bgColor, shape = RoundedCornerShape(50))
                     .clickable(
+                        // Remove default ripple/indication for a cleaner look
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {

@@ -26,6 +26,17 @@ import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 
+/**
+ * MediaGrid Composable
+ * 
+ * A versatile grid for displaying both images and videos. Supports multi-selection
+ * through long-press and visual indicators for selected items.
+ * 
+ * @param mediaList List of URIs for the media items to display.
+ * @param selectedItems A set of URIs currently selected by the user.
+ * @param onItemClick Callback for single-tap on an item.
+ * @param onItemLongClick Callback for long-press on an item (toggles selection mode).
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaGrid(
@@ -39,9 +50,11 @@ fun MediaGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
+        // Extra bottom padding to ensure content isn't covered by the bottom bar
         contentPadding = PaddingValues(bottom = 80.dp, start = 4.dp, end = 4.dp, top = 4.dp)
     ) {
         items(mediaList) { uri ->
+            // Determine if the item is a video for thumbnail generation and overlay
             val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true ||
                     uri.toString().contains(".mp4", true)
             val isSelected = selectedItems.contains(uri)
@@ -56,6 +69,7 @@ fun MediaGrid(
                         onLongClick = { onItemLongClick(uri) }
                     )
             ) {
+                // Load thumbnail. If it's a video, use VideoFrameDecoder to extract a frame.
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(uri)
@@ -70,6 +84,7 @@ fun MediaGrid(
                     contentScale = ContentScale.Crop
                 )
 
+                // Overlay a play icon for videos
                 if (isVideo) {
                     Text(
                         text = "▶",
@@ -78,6 +93,7 @@ fun MediaGrid(
                     )
                 }
 
+                // Visual indicators for selected items (tint and checkmark)
                 if (isSelected) {
                     Box(
                         modifier = Modifier

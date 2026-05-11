@@ -17,8 +17,15 @@ import com.google.android.gms.ads.*
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
+/**
+ * AdBanner Composable
+ * 
+ * Displays a Google Mobile Ads banner at the bottom of the screen.
+ * It automatically adjusts its height based on whether an ad is successfully loaded.
+ */
 @Composable
 fun AdBanner(modifier: Modifier = Modifier) {
+    // Tracks if the ad has been successfully loaded to toggle visibility
     var isAdLoaded by remember { mutableStateOf(false) }
 
     Box(
@@ -28,11 +35,13 @@ fun AdBanner(modifier: Modifier = Modifier) {
             .background(if (isAdLoaded) Color.White else Color.Transparent),
         contentAlignment = Alignment.Center
     ) {
+        // Integrate the classic Android AdView into the Compose layout
         AndroidView(
             factory = { ctx ->
                 AdView(ctx).apply {
                     setAdSize(AdSize.BANNER)
-                    adUnitId = "ca-app-pub-3940256099942544/6300978111"
+                    // Test Ad Unit ID for development
+                    adUnitId = "ca-app-pub-7668637948120420/9031601842"
                     adListener = object : AdListener() {
                         override fun onAdLoaded() {
                             Log.d("AdBanner", "✅ Banner loaded successfully")
@@ -50,17 +59,27 @@ fun AdBanner(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * InterstitialAdManager
+ * 
+ * Helper class to manage loading and showing Google Interstitial Ads.
+ * It handles caching the ad and refreshing it after use.
+ */
 class InterstitialAdManager(private val context: Context) {
     private var interstitialAd: InterstitialAd? = null
     private var isLoading = false
 
+    /**
+     * Loads an interstitial ad if one isn't already loaded or being loaded.
+     */
     fun loadAd() {
         if (interstitialAd != null || isLoading) return
         
         isLoading = true
         Log.d("AdManager", "⏳ Starting to load Interstitial...")
         val adRequest = AdRequest.Builder().build()
-        InterstitialAd.load(context, "ca-app-pub-3940256099942544/1033173712", adRequest, object : InterstitialAdLoadCallback() {
+        // Test Ad Unit ID for development
+        InterstitialAd.load(context, "ca-app-pub-7668637948120420/7022491961", adRequest, object : InterstitialAdLoadCallback() {
             override fun onAdFailedToLoad(adError: LoadAdError) {
                 Log.e("AdManager", "❌ Interstitial failed to load: ${adError.message} (Code: ${adError.code})")
                 interstitialAd = null
@@ -75,6 +94,12 @@ class InterstitialAdManager(private val context: Context) {
         })
     }
 
+    /**
+     * Displays the loaded interstitial ad.
+     * 
+     * @param activity The activity context required to show the ad.
+     * @param onAdDismissed Callback executed when the ad is closed or fails to show.
+     */
     fun showAd(activity: Activity?, onAdDismissed: () -> Unit) {
         if (activity == null) {
             onAdDismissed()
@@ -84,6 +109,7 @@ class InterstitialAdManager(private val context: Context) {
         if (interstitialAd != null) {
             interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
                 override fun onAdDismissedFullScreenContent() {
+                    // Clear the current ad and pre-load the next one
                     interstitialAd = null
                     loadAd()
                     onAdDismissed()
@@ -97,6 +123,7 @@ class InterstitialAdManager(private val context: Context) {
             }
             interstitialAd?.show(activity)
         } else {
+            // If no ad is ready, proceed immediately and try to load one for next time
             onAdDismissed()
             loadAd()
         }

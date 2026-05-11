@@ -27,6 +27,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dhruv.status.hub.R
 
+/**
+ * OnboardingScreen Composable
+ * 
+ * The first screen shown to new users. It displays the app logo, name,
+ * and requires the user to agree to the Privacy Policy before proceeding.
+ * 
+ * @param onContinue Callback triggered when the user clicks the "Continue" button.
+ */
 @Composable
 fun OnboardingScreen(onContinue: () -> Unit) {
     val context = LocalContext.current
@@ -44,8 +52,10 @@ fun OnboardingScreen(onContinue: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // Flexible spacer to push content towards the center
             Spacer(modifier = Modifier.weight(1f))
 
+            // Application Logo
             Image(
                 painter = painterResource(id = R.drawable.app_logo),
                 contentDescription = "App Logo",
@@ -57,6 +67,7 @@ fun OnboardingScreen(onContinue: () -> Unit) {
             
             Spacer(modifier = Modifier.height(20.dp))
             
+            // Application Title
             Text(
                 text = "Status Hub",
                 fontSize = 42.sp, 
@@ -65,21 +76,24 @@ fun OnboardingScreen(onContinue: () -> Unit) {
                 color = Color.Black
             )
 
+            // Flexible spacer to push bottom elements towards the bottom
             Spacer(modifier = Modifier.weight(1f))
 
+            // Continue Button to finish onboarding
             Button(
                 onClick = onContinue,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp), // Restored sleek height
+                    .height(50.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
-                shape = RoundedCornerShape(50) // Fully rounded
+                shape = RoundedCornerShape(50)
             ) {
                 Text("Continue", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Privacy Policy Text with a clickable link
             val annotatedString = buildAnnotatedString {
                 append("By continuing, you agree to our ")
                 pushStringAnnotation(tag = "policy", annotation = privacyPolicyUrl)
@@ -97,6 +111,7 @@ fun OnboardingScreen(onContinue: () -> Unit) {
                     color = Color.Gray
                 ),
                 onClick = { offset ->
+                    // Handle clicking the "Privacy Policy" part of the text
                     annotatedString.getStringAnnotations(tag = "policy", start = offset, end = offset)
                         .firstOrNull()?.let { annotation ->
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(annotation.item))

@@ -33,6 +33,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 
+/**
+ * DownloadedMediaPreviewer Composable
+ * 
+ * A full-screen viewer specifically designed for downloaded media. 
+ * Includes navigation (back), sharing, and deletion capabilities.
+ * 
+ * @param selectedMedia The URI of the media to show initially.
+ * @param mediaList The list of all downloaded media URIs.
+ * @param onClose Callback to exit the previewer.
+ * @param onDelete Callback triggered when an item is confirmed for deletion.
+ */
 @Composable
 fun DownloadedMediaPreviewer(
     selectedMedia: Uri,
@@ -47,12 +58,14 @@ fun DownloadedMediaPreviewer(
         pageCount = { mediaList.size }
     )
 
+    // State to toggle UI overlays (buttons/bars) for images
     var showControls by remember { mutableStateOf(true) }
+    // State to show/hide the deletion confirmation dialog
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    // Intercept back button to close the viewer
     BackHandler { onClose() }
 
-    // Unified Layout to prevent sticking/jumping during swipes
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
             state = pagerState,
@@ -63,13 +76,13 @@ fun DownloadedMediaPreviewer(
                     itemUri.toString().lowercase().contains(".mp4")
 
             if (isVideo) {
+                // Layout for video content with space reserved for native controls
                 Column(modifier = Modifier.fillMaxSize()) {
                     VideoPlayer(uri = itemUri, modifier = Modifier.weight(1f))
-                    // This spacer reserves space at the bottom so the video controls 
-                    // (seek bar, etc) never overlap with the action bar.
                     Spacer(modifier = Modifier.navigationBarsPadding().height(48.dp))
                 }
             } else {
+                // Layout for images with toggleable controls on tap
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -81,7 +94,7 @@ fun DownloadedMediaPreviewer(
                 ) {
                     AsyncImage(
                         model = itemUri,
-                        contentDescription = null,
+                        contentDescription = "Image preview",
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -94,13 +107,13 @@ fun DownloadedMediaPreviewer(
         val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
                 currentUri.toString().lowercase().contains(".mp4")
 
-        // Dynamic background color for the Action Bar
+        // Smoothly animate the background color of the action bar based on content type
         val barBackground by animateColorAsState(
             targetValue = if (isCurrentVideo) Color.Black else Color.Black.copy(alpha = 0.4f),
             label = "barBackground"
         )
 
-        // Top Back Button
+        // Floating Back Button overlay
         AnimatedVisibility(
             visible = showControls || isCurrentVideo,
             enter = fadeIn(),
@@ -119,7 +132,7 @@ fun DownloadedMediaPreviewer(
             }
         }
 
-        // Bottom Action Bar
+        // Bottom Action Bar overlay (Share/Delete)
         AnimatedVisibility(
             visible = showControls || isCurrentVideo,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -134,6 +147,7 @@ fun DownloadedMediaPreviewer(
         }
     }
 
+    // Modal dialog for confirming deletion
     if (showDeleteDialog) {
         val currentUri = mediaList[pagerState.currentPage]
         val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
@@ -187,6 +201,11 @@ fun DownloadedMediaPreviewer(
     }
 }
 
+/**
+ * ActionBar Composable
+ * 
+ * Bottom bar containing Share and Delete actions.
+ */
 @Composable
 fun ActionBar(
     uri: Uri,
@@ -202,6 +221,7 @@ fun ActionBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Trigger system share sheet for the current media item
         IconButton(onClick = {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = context.contentResolver.getType(uri) ?: "image/*"
@@ -213,6 +233,7 @@ fun ActionBar(
             Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
         }
 
+        // Open deletion confirmation dialog
         IconButton(onClick = onDeleteClick) {
             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
         }

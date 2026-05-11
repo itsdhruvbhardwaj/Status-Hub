@@ -13,6 +13,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * HomeTopBar Composable
+ * 
+ * The top app bar for the main screen. It adapts its content based on whether
+ * the user is in "Selection Mode" (e.g., when deleting downloaded items).
+ * 
+ * @param isSelectionMode Whether multi-selection is active.
+ * @param selectedCount The number of items currently selected.
+ * @param onSettingsClick Callback for the settings icon button.
+ * @param onDeleteClick Callback for the delete icon button.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeTopBar(
@@ -21,12 +32,15 @@ fun HomeTopBar(
     onSettingsClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    // Elevate the top bar for a visual shadow effect
     Surface(shadowElevation = 4.dp) {
         TopAppBar(
             title = {
                 if (isSelectionMode) {
+                    // Show selection count if in selection mode
                     Text("$selectedCount Selected", fontWeight = FontWeight.Bold)
                 } else {
+                    // Show app name in cursive font otherwise
                     Text(
                         text = "Status Hub",
                         fontWeight = FontWeight.Bold,
@@ -37,10 +51,12 @@ fun HomeTopBar(
             },
             actions = {
                 if (isSelectionMode) {
+                    // Show delete icon during selection
                     IconButton(onClick = onDeleteClick) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete")
                     }
                 } else {
+                    // Show settings icon normally
                     IconButton(
                         onClick = onSettingsClick,
                         modifier = Modifier.size(40.dp)

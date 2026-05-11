@@ -18,12 +18,20 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/**
+ * MainActivity
+ * 
+ * The main entry point of the application. It handles initialization,
+ * onboarding flow, and theme management.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Initialize Google Mobile Ads SDK on a background thread
         CoroutineScope(Dispatchers.IO).launch {
             MobileAds.initialize(this@MainActivity) {
+                // Configure test devices for development
                 val testDeviceIds = listOf("c14c5401-8498-42be-bb07-acecd71fe275")
                 val configuration = RequestConfiguration.Builder()
                     .setTestDeviceIds(testDeviceIds)
@@ -32,36 +40,44 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Enable edge-to-edge display to use the entire screen area
         enableEdgeToEdge()
+        
         setContent {
             val context = LocalContext.current
             
-            // Using a state that triggers recomposition when the preference changes
+            // State for the dark theme preference. 
+            // Re-evaluates whenever it's changed in settings.
             var isDarkTheme by remember { 
                 mutableStateOf(isDarkModeEnabled(context)) 
             }
 
-            // A trigger to refresh the theme state from SharedPreferences
-            // In a real app, you might use a Flow or a custom PreferenceObserver
+            // A trigger to refresh the theme state from SharedPreferences.
+            // When HomeScreen signals a theme change, this value increments,
+            // triggering the LaunchedEffect to update isDarkTheme.
             val themeRefreshTrigger = remember { mutableIntStateOf(0) }
             
             LaunchedEffect(themeRefreshTrigger.value) {
                 isDarkTheme = isDarkModeEnabled(context)
             }
 
+            // Apply the app's custom theme
             StatusHubTheme(darkTheme = isDarkTheme) {
+                // Check if the user has already completed the onboarding process
                 var onboardingFinished by remember { 
                     mutableStateOf(isOnboardingComplete(context)) 
                 }
 
                 if (onboardingFinished) {
-                    // Pass the trigger to HomeScreen so it can notify when settings change
+                    // Navigate to HomeScreen if onboarding is complete
                     HomeScreen(onThemeChange = { 
                         themeRefreshTrigger.value += 1 
                     })
                 } else {
+                    // Show OnboardingScreen for new users
                     OnboardingScreen(
                         onContinue = {
+                            // Mark onboarding as complete and move to HomeScreen
                             setOnboardingComplete(context)
                             onboardingFinished = true
                         }

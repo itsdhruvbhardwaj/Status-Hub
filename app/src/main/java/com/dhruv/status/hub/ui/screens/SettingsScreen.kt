@@ -25,6 +25,15 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.dhruv.status.hub.utils.*
 
+/**
+ * SettingsScreen Composable
+ * 
+ * Provides a user interface for app settings, including general preferences and app information.
+ * 
+ * @param onBack Callback for handling back navigation.
+ * @param onThemeChange Callback for notifying theme changes (e.g., dark mode toggle).
+ * @param onHelpClick Callback for navigating to the Help/How to Use screen.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -32,16 +41,19 @@ fun SettingsScreen(
     onThemeChange: () -> Unit = {},
     onHelpClick: () -> Unit
 ) {
+    // Current context for accessing preferences and starting activities
     val context = LocalContext.current
     
+    // State for toggling auto-save status and dark mode, initialized from saved preferences
     var autoSave by remember { mutableStateOf(isAutoSaveEnabled(context)) }
     var darkMode by remember { mutableStateOf(isDarkModeEnabled(context)) }
 
-    // Handle physical back button
+    // Handle physical back button presses
     BackHandler { onBack() }
 
     Scaffold(
         topBar = {
+            // Shadowed surface for the TopAppBar
             Surface(shadowElevation = 4.dp) {
                 TopAppBar(
                     title = {
@@ -53,6 +65,7 @@ fun SettingsScreen(
                         )
                     },
                     navigationIcon = {
+                        // Back navigation button
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
@@ -66,6 +79,7 @@ fun SettingsScreen(
             }
         }
     ) { innerPadding ->
+        // Main content column with vertical scrolling enabled
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -74,9 +88,11 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            // General Settings Section
             Text(text = "General", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Toggle for Auto-Save Status preference
             SettingsToggleItem(
                 title = "Auto Save Status",
                 subtitle = "Automatically save viewed statuses to gallery",
@@ -89,6 +105,7 @@ fun SettingsScreen(
             
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+            // Toggle for Dark Mode preference
             SettingsToggleItem(
                 title = "Dark Mode",
                 subtitle = "Enable dark theme for the app",
@@ -96,20 +113,23 @@ fun SettingsScreen(
                 onCheckedChange = {
                     darkMode = it
                     setDarkModeEnabled(context, it)
-                    onThemeChange()
+                    onThemeChange() // Notify parent of theme change
                 }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
+            // App Information Section
             Text(text = "App Info", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Navigates to help content
             SettingsClickableItem(
                 title = "How to Use / Help",
                 onClick = onHelpClick
             )
 
+            // Opens Privacy Policy in a browser
             SettingsClickableItem(
                 title = "Privacy Policy",
                 onClick = {
@@ -118,13 +138,14 @@ fun SettingsScreen(
                 }
             )
 
+            // Opens system share sheet to share the app link
             SettingsClickableItem(
                 title = "Share App",
                 onClick = {
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_SUBJECT, "Status Hub App")
-                        putExtra(Intent.EXTRA_TEXT, "Check out this amazing WhatsApp Status Saver app! Download it here: https://play.google.com/store/apps/details?id=${context.packageName}")
+                        putExtra(Intent.EXTRA_TEXT, "Check out this amazing Status Saver app! Download it here: https://play.google.com/store/apps/details?id=${context.packageName}")
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "Share via"))
                 }
@@ -133,6 +154,11 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * SettingsToggleItem
+ * 
+ * A reusable row component with a title, subtitle, and a Switch.
+ */
 @Composable
 fun SettingsToggleItem(
     title: String,
@@ -140,6 +166,7 @@ fun SettingsToggleItem(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    // Determine if the app is currently in dark theme
     val isDark = isSystemInDarkTheme() || isDarkModeEnabled(LocalContext.current)
     val blueColor = Color(0xFF3F5AA9)
 
@@ -154,6 +181,7 @@ fun SettingsToggleItem(
             Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onBackground)
             Text(text = subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
         }
+        // Switch for boolean settings
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -169,6 +197,11 @@ fun SettingsToggleItem(
     }
 }
 
+/**
+ * SettingsClickableItem
+ * 
+ * A reusable row component for navigation or triggering actions.
+ */
 @Composable
 fun SettingsClickableItem(
     title: String,

@@ -26,6 +26,18 @@ import com.dhruv.status.hub.R
 import com.dhruv.status.hub.utils.downloadMedia
 import com.dhruv.status.hub.utils.findActivity
 
+/**
+ * MediaPreviewer Composable
+ * 
+ * Provides a full-screen pager to preview images and videos from a list.
+ * Includes a back button and an optional download button that triggers an interstitial ad.
+ * 
+ * @param selectedMedia The URI of the media item that should be shown first.
+ * @param mediaList The full list of media URIs to swipe through.
+ * @param onClose Callback to exit the previewer.
+ * @param adManager Manager to handle showing ads before downloading.
+ * @param showDownloadButton Whether to display the download action button.
+ */
 @Composable
 fun MediaPreviewer(
     selectedMedia: Uri,
@@ -35,27 +47,35 @@ fun MediaPreviewer(
     showDownloadButton: Boolean = true
 ) {
     val context = LocalContext.current
+    // Find the starting index based on the selected media URI
     val currentIndex = mediaList.indexOf(selectedMedia).coerceAtLeast(0)
+    // State for the horizontal pager
     val pagerState = rememberPagerState(
         initialPage = currentIndex,
         pageCount = { mediaList.size }
     )
 
+    // Intercept back button to close the previewer
     BackHandler { onClose() }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Full-screen horizontal pager for swiping between media items
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             val itemUri = mediaList[page]
+            // Determine item type for rendering (Image vs Video)
             val isItemVideo = context.contentResolver.getType(itemUri)?.startsWith("video") == true || 
                              itemUri.toString().lowercase().contains(".mp4")
 
             Box(modifier = Modifier.fillMaxSize()) {
                 if (isItemVideo) {
+                    // Use custom VideoPlayer for video content
                     VideoPlayer(uri = itemUri, modifier = Modifier.fillMaxSize())
                 } else {
+                    // Use AsyncImage for static images
                     AsyncImage(model = itemUri, contentDescription = null, modifier = Modifier.fillMaxSize())
                 }
 
+                // Floating download button with ad integration
                 if (showDownloadButton) {
                     Box(
                         modifier = Modifier
@@ -66,13 +86,13 @@ fun MediaPreviewer(
                             .background(Color.Black.copy(alpha = 0.7f))
                             .clickable {
                                 val activity = context.findActivity()
+                                // Show ad first, then download the media
                                 adManager.showAd(activity) {
                                     downloadMedia(context, itemUri)
                                 }
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Using the local vector drawable to keep app size small
                         Icon(
                             painter = painterResource(id = R.drawable.ic_download),
                             contentDescription = "Download", 
@@ -84,6 +104,7 @@ fun MediaPreviewer(
             }
         }
 
+        // Top-left back button overlay
         IconButton(
             onClick = { onClose() },
             modifier = Modifier

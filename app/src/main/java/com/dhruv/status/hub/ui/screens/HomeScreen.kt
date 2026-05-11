@@ -40,47 +40,65 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * HomeScreen Composable
+ * 
+ * The main screen of the application, responsible for displaying WhatsApp statuses (Images/Videos)
+ * and downloaded media. It handles folder permissions, data loading, and navigation to settings/previews.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(onThemeChange: () -> Unit = {}) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Manager for interstitial ads
     val adManager = remember { InterstitialAdManager(context) }
 
+    // State for the currently selected tab (0: Images, 1: Videos, 2: Downloads)
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Images", "Videos", "Downloads")
 
+    // State for the media item currently being previewed
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
+    // State to toggle visibility of the Settings screen
     var showSettings by remember { mutableStateOf(false) }
 
+    // Retrieve the saved folder URI from SharedPreferences
     val savedUri = getSavedFolderUri(context)
     var folderUri by remember { mutableStateOf(savedUri) }
 
+    // Lists to hold URIs for different media types
     var imageList by remember { mutableStateOf(listOf<Uri>()) }
     var videoList by remember { mutableStateOf(listOf<Uri>()) }
     var downloadedList by remember { mutableStateOf(listOf<Uri>()) }
 
+    // States for pull-to-refresh and initial loading indicator
     var isRefreshing by remember { mutableStateOf(false) }
     var isLoadingFirstTime by remember { mutableStateOf(false) }
     val pullToRefreshState = rememberPullToRefreshState()
 
+    // Multi-selection state for the Downloads tab
     val selectedItems = remember { mutableStateOf(setOf<Uri>()) }
     val isSelectionMode = selectedItems.value.isNotEmpty()
     
+    // States for various dialogs
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
 
+    // Load an interstitial ad when the screen is first composed
     LaunchedEffect(Unit) {
         adManager.loadAd()
     }
 
+    // Launcher for selecting the WhatsApp statuses directory
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         uri?.let {
             folderUri = it
             saveFolderUri(context, it)
+            // Persist the permission so it survives app restarts
             context.contentResolver.takePersistableUriPermission(
                 it,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -88,6 +106,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
         }
     }
 
+    // Function to launch the folder picker with a pre-selected initial URI if possible
     val launchFolderPicker = {
         val authority = "com.android.externalstorage.documents"
         val documentId = "primary:Android/media/com.whatsapp/WhatsApp/Media/.Statuses"
@@ -99,12 +118,17 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
         folderPicker.launch(initialUri)
     }
 
+    // Show permission info dialog if no folder is selected yet
     LaunchedEffect(Unit) {
         if (folderUri == null) {
             showPermissionInfoDialog = true
         }
     }
 
+    /**
+     * Loads media files from the selected folder and the downloads directory.
+     * @param isManualRefresh Whether the load was triggered by the user (pull-to-refresh).
+     */
     val loadData: suspend (Boolean) -> Unit = { isManualRefresh ->
         if (!isManualRefresh) isLoadingFirstTime = true
         folderUri?.let { uri ->
@@ -115,9 +139,9 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                         val images = mutableListOf<Uri>()
                         val videos = mutableListOf<Uri>()
                         
-                        // Read setting directly from disk to ensure it's always current
                         val autoSaveEnabled = isAutoSaveEnabled(context)
 
+                        // Attempt to find the .Statuses folder within the selected directory
                         val statusFolder = when {
                             docFile.name?.contains("Statuses", ignoreCase = true) == true -> docFile
                             docFile.findFile(".Statuses") != null -> docFile.findFile(".Statuses")
@@ -132,6 +156,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                 val mimeType = file.type?.lowercase() ?: ""
                                 val fileName = file.name?.lowercase() ?: ""
 
+                                // Determine if file is an image or video based on mime type or extension
                                 val isImage = mimeType.startsWith("image") ||
                                         fileName.endsWith(".jpg") ||
                                         fileName.endsWith(".jpeg") ||
@@ -160,6 +185,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                             }
                         }
 
+                        // Update lists on the main thread (reversed to show latest first)
                         withContext(Dispatchers.Main) {
                             imageList = images.reversed()
                             videoList = videos.reversed()
@@ -170,29 +196,33 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                 }
             }
         }
+        // Load the list of manually saved media
         downloadedList = getDownloadedMedia(context)
         isLoadingFirstTime = false
     }
 
-    // Initial load and periodic refresh (every 60 seconds)
+    // Initial data load and background polling for updates every minute
     LaunchedEffect(folderUri) {
         if (folderUri != null) {
             loadData(false)
             while (isActive) {
-                delay(60000) // Refresh every 1 minute
-                loadData(true) // Silent refresh
+                delay(60000)
+                loadData(true)
             }
         }
     }
 
+    // Refresh downloaded list when switching to the Downloads tab
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) {
             downloadedList = getDownloadedMedia(context)
         } else {
+            // Clear selection mode when leaving the Downloads tab
             selectedItems.value = emptySet()
         }
     }
 
+    // Action to delete selected items from the Downloads tab
     val deleteSelectedItems = {
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -210,6 +240,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
         }
     }
 
+    // UI Routing: Show Settings screen if toggled
     if (showSettings) {
         SettingsScreen(
             onBack = { showSettings = false },
@@ -220,6 +251,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
             }
         )
     } else {
+        // Handle back button to exit selection mode instead of closing app
         BackHandler(isSelectionMode) {
             selectedItems.value = emptySet()
         }
@@ -262,6 +294,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                 .background(MaterialTheme.colorScheme.background)
                         ) {
 
+                            // Conditional content based on permission and loading state
                             if (folderUri == null) {
                                 PermissionRequiredContent { showPermissionInfoDialog = true }
                             } else if (isLoadingFirstTime && imageList.isEmpty() && videoList.isEmpty()) {
@@ -269,6 +302,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                     CircularProgressIndicator()
                                 }
                             } else {
+                                // Display the grid for the current tab
                                 HomeTabContent(
                                     selectedTab = selectedTab,
                                     imageList = imageList,
@@ -281,6 +315,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                 )
                             }
 
+                            // Bottom navigation bar
                             Box(modifier = Modifier.align(Alignment.BottomCenter)) {
                                 StatusBottomBar(
                                     selectedTab = selectedTab,
@@ -290,10 +325,12 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                             }
                         }
                     }
+                    // Ad banner at the bottom of the screen
                     AdBanner()
                 }
             }
 
+            // Overlay dialogs
             if (showPermissionInfoDialog) {
                 PermissionInfoDialog(
                     onDismiss = { showPermissionInfoDialog = false },
@@ -315,8 +352,10 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                 )
             }
 
+            // Full-screen media previewer
             selectedMedia?.let { uri ->
                 if (selectedTab == 2) {
+                    // Previewer specifically for downloaded media (with delete option)
                     DownloadedMediaPreviewer(
                         selectedMedia = uri,
                         mediaList = downloadedList,
@@ -337,6 +376,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                         }
                     )
                 } else {
+                    // Standard previewer for WhatsApp statuses
                     val currentList = if (context.contentResolver.getType(uri)?.startsWith("video") == true || 
                         uri.toString().lowercase().contains(".mp4")) videoList else imageList
 
@@ -353,6 +393,9 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
     }
 }
 
+/**
+ * UI shown when the app doesn't have access to the WhatsApp status folder yet.
+ */
 @Composable
 fun PermissionRequiredContent(onGrantClick: () -> Unit) {
     Column(
@@ -380,6 +423,9 @@ fun PermissionRequiredContent(onGrantClick: () -> Unit) {
     }
 }
 
+/**
+ * Content switcher for the main tabs, with transition animations.
+ */
 @Composable
 fun HomeTabContent(
     selectedTab: Int,
@@ -407,21 +453,21 @@ fun HomeTabContent(
     ) { targetTab ->
         Box(modifier = Modifier.fillMaxSize()) {
             when (targetTab) {
-                0 -> {
+                0 -> { // Images Tab
                     if (imageList.isEmpty()) {
                         EmptyStateContent("No statuses found.", "Make sure you've viewed statuses in WhatsApp.")
                     } else {
                         ImageGrid(imageList, onClick = onMediaClick)
                     }
                 }
-                1 -> {
+                1 -> { // Videos Tab
                     if (videoList.isEmpty()) {
                         EmptyStateContent("No videos found", "")
                     } else {
                         VideoGrid(videoList, onClick = onMediaClick)
                     }
                 }
-                2 -> {
+                2 -> { // Downloads Tab
                     if (downloadedList.isEmpty()) {
                         EmptyStateContent("No downloads yet.", "")
                     } else {
@@ -446,6 +492,9 @@ fun HomeTabContent(
     }
 }
 
+/**
+ * Generic empty state UI.
+ */
 @Composable
 fun EmptyStateContent(title: String, subtitle: String) {
     Column(
@@ -460,6 +509,9 @@ fun EmptyStateContent(title: String, subtitle: String) {
     }
 }
 
+/**
+ * Dialog guiding the user on how to grant folder permissions correctly.
+ */
 @Composable
 fun PermissionInfoDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
@@ -490,6 +542,9 @@ fun PermissionInfoDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     )
 }
 
+/**
+ * Confirmation dialog before deleting downloaded media.
+ */
 @Composable
 fun DeleteConfirmationDialog(selectedCount: Int, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(

@@ -18,6 +18,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
+/**
+ * ImageGrid Composable
+ * 
+ * Displays a 3-column grid of images from the provided media list.
+ * 
+ * @param mediaList List of URIs for the images to display.
+ * @param onClick Callback triggered when an image is tapped.
+ */
 @Composable
 fun ImageGrid(
     mediaList: List<Uri>,
@@ -32,15 +40,16 @@ fun ImageGrid(
             Box(
                 modifier = Modifier
                     .padding(4.dp)
-                    .aspectRatio(1f)
+                    .aspectRatio(1f) // Keep items square
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { onClick(uri) }
             ) {
+                // Load and display the image using Coil
                 AsyncImage(
                     model = uri,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop // Crop to fill the square aspect ratio
                 )
             }
         }
