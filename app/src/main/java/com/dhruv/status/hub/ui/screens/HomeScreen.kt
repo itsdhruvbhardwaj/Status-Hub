@@ -11,7 +11,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,19 +21,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.dhruv.status.hub.R
 import com.dhruv.status.hub.ui.components.*
 import com.dhruv.status.hub.utils.*
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +65,10 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Images", "Videos", "Downloads")
 
+    // Sub-tab selection for the Downloads tab (0: Images, 1: Videos, 2: Favorites)
+    var selectedDownloadSubTab by remember { mutableIntStateOf(0) }
+    val downloadSubTabs = listOf("Images", "Videos", "Favorites")
+
     // State for the media item currently being previewed
     var selectedMedia by remember { mutableStateOf<Uri?>(null) }
     // State to toggle visibility of the Settings screen
@@ -72,6 +82,9 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
     var imageList by remember { mutableStateOf(listOf<Uri>()) }
     var videoList by remember { mutableStateOf(listOf<Uri>()) }
     var downloadedList by remember { mutableStateOf(listOf<Uri>()) }
+    
+    // Favorites state to trigger UI updates
+    var favorites by remember { mutableStateOf(getFavorites(context)) }
 
     // States for pull-to-refresh and initial loading indicator
     var isRefreshing by remember { mutableStateOf(false) }
@@ -216,6 +229,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) {
             downloadedList = getDownloadedMedia(context)
+            favorites = getFavorites(context)
         } else {
             // Clear selection mode when leaving the Downloads tab
             selectedItems.value = emptySet()
@@ -236,6 +250,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
             }
             selectedItems.value = emptySet()
             downloadedList = getDownloadedMedia(context)
+            favorites = getFavorites(context)
             Toast.makeText(context, "Deleted selected items", Toast.LENGTH_SHORT).show()
         }
     }
@@ -305,9 +320,13 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                 // Display the grid for the current tab
                                 HomeTabContent(
                                     selectedTab = selectedTab,
+                                    selectedDownloadSubTab = selectedDownloadSubTab,
+                                    downloadSubTabs = downloadSubTabs,
+                                    onDownloadSubTabSelected = { selectedDownloadSubTab = it },
                                     imageList = imageList,
                                     videoList = videoList,
                                     downloadedList = downloadedList,
+                                    favorites = favorites,
                                     selectedItems = selectedItems.value,
                                     isSelectionMode = isSelectionMode,
                                     onMediaClick = { uri -> selectedMedia = uri },
@@ -359,7 +378,12 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                     DownloadedMediaPreviewer(
                         selectedMedia = uri,
                         mediaList = downloadedList,
-                        onClose = { selectedMedia = null },
+                        onClose = { 
+                            selectedMedia = null 
+                            // Refresh downloaded list and favorites
+                            downloadedList = getDownloadedMedia(context)
+                            favorites = getFavorites(context)
+                        },
                         onDelete = { deleteUri ->
                             scope.launch {
                                 withContext(Dispatchers.IO) {
@@ -370,6 +394,7 @@ fun HomeScreen(onThemeChange: () -> Unit = {}) {
                                     }
                                 }
                                 downloadedList = getDownloadedMedia(context)
+                                favorites = getFavorites(context)
                                 selectedMedia = null
                                 Toast.makeText(context, "Deleted", Toast.LENGTH_SHORT).show()
                             }
@@ -429,14 +454,20 @@ fun PermissionRequiredContent(onGrantClick: () -> Unit) {
 @Composable
 fun HomeTabContent(
     selectedTab: Int,
+    selectedDownloadSubTab: Int,
+    downloadSubTabs: List<String>,
+    onDownloadSubTabSelected: (Int) -> Unit,
     imageList: List<Uri>,
     videoList: List<Uri>,
     downloadedList: List<Uri>,
+    favorites: Set<String>,
     selectedItems: Set<Uri>,
     isSelectionMode: Boolean,
     onMediaClick: (Uri) -> Unit,
     onSelectionChange: (Set<Uri>) -> Unit
 ) {
+    val context = LocalContext.current
+    
     AnimatedContent(
         targetState = selectedTab,
         transitionSpec = {
@@ -468,23 +499,72 @@ fun HomeTabContent(
                     }
                 }
                 2 -> { // Downloads Tab
-                    if (downloadedList.isEmpty()) {
-                        EmptyStateContent("No downloads yet.", "")
-                    } else {
-                        MediaGrid(
-                            mediaList = downloadedList,
-                            selectedItems = selectedItems,
-                            onItemClick = { uri ->
-                                if (isSelectionMode) {
-                                    onSelectionChange(if (selectedItems.contains(uri)) selectedItems - uri else selectedItems + uri)
-                                } else {
-                                    onMediaClick(uri)
-                                }
-                            },
-                            onItemLongClick = { uri ->
-                                onSelectionChange(if (selectedItems.contains(uri)) selectedItems - uri else selectedItems + uri)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Sub-tab selection for Downloads (Images, Videos, Favorites)
+                        TabRow(
+                            selectedTabIndex = selectedDownloadSubTab,
+                            containerColor = Color.Transparent,
+                            divider = {},
+                            indicator = { tabPositions ->
+                                TabRowDefaults.SecondaryIndicator(
+                                    Modifier.tabIndicatorOffset(tabPositions[selectedDownloadSubTab]),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
-                        )
+                        ) {
+                            downloadSubTabs.forEachIndexed { index, title ->
+                                Tab(
+                                    selected = selectedDownloadSubTab == index,
+                                    onClick = { onDownloadSubTabSelected(index) },
+                                    text = { 
+                                        Text(
+                                            text = title, 
+                                            fontSize = 14.sp,
+                                            fontWeight = if (selectedDownloadSubTab == index) FontWeight.Bold else FontWeight.Normal
+                                        ) 
+                                    }
+                                )
+                            }
+                        }
+
+                        val filteredList = remember(downloadedList, selectedDownloadSubTab, favorites) {
+                            when (selectedDownloadSubTab) {
+                                0 -> downloadedList.filter { uri -> 
+                                    context.contentResolver.getType(uri)?.startsWith("image") == true 
+                                }
+                                1 -> downloadedList.filter { uri -> 
+                                    context.contentResolver.getType(uri)?.startsWith("video") == true ||
+                                    uri.toString().lowercase().contains(".mp4")
+                                }
+                                2 -> downloadedList.filter { uri -> favorites.contains(uri.toString()) }
+                                else -> downloadedList
+                            }
+                        }
+
+                        if (filteredList.isEmpty()) {
+                            val emptyMsg = when (selectedDownloadSubTab) {
+                                0 -> "No downloaded images."
+                                1 -> "No downloaded videos."
+                                2 -> "No favorites added yet."
+                                else -> "No downloads yet."
+                            }
+                            EmptyStateContent(emptyMsg, "")
+                        } else {
+                            MediaGrid(
+                                mediaList = filteredList,
+                                selectedItems = selectedItems,
+                                onItemClick = { uri ->
+                                    if (isSelectionMode) {
+                                        onSelectionChange(if (selectedItems.contains(uri)) selectedItems - uri else selectedItems + uri)
+                                    } else {
+                                        onMediaClick(uri)
+                                    }
+                                },
+                                onItemLongClick = { uri ->
+                                    onSelectionChange(if (selectedItems.contains(uri)) selectedItems - uri else selectedItems + uri)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -493,18 +573,63 @@ fun HomeTabContent(
 }
 
 /**
- * Generic empty state UI.
+ * Generic empty state UI with illustration.
  */
 @Composable
 fun EmptyStateContent(title: String, subtitle: String) {
+    val context = LocalContext.current
+    
+    // Determine the effective theme to choose the correct illustration
+    val themePref = getAppTheme(context)
+    val systemInDark = isSystemInDarkTheme()
+    val isDark = when (themePref) {
+        THEME_LIGHT -> false
+        THEME_DARK -> true
+        else -> systemInDark
+    }
+    
+    val illustration = if (isDark) R.drawable.no_status_found_dark else R.drawable.no_status_found_light
+
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()), 
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp), 
         Arrangement.Center, 
         Alignment.CenterHorizontally
     ) {
-        Text(title, color = MaterialTheme.colorScheme.outline)
-        if (subtitle.isNotEmpty()) {
-            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f))
+        // Enlarge icon to 420dp height
+        Image(
+            painter = painterResource(id = illustration),
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxWidth(1f) 
+                .height(420.dp),
+            contentScale = ContentScale.Fit
+        )
+        
+        // Massive negative offset applied directly to the text column to pull it upwards into the illustration's whitespace.
+        // Adjusted to -320dp to strictly remove as much space as possible.
+        Column(
+            modifier = Modifier.offset(y = (-90).dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title, 
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                textAlign = TextAlign.Center
+            )
+            
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle, 
+                    fontSize = 14.sp, 
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
+            }
         }
     }
 }

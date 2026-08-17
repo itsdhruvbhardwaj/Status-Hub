@@ -4,14 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import com.dhruv.status.hub.ui.screens.HomeScreen
 import com.dhruv.status.hub.ui.screens.OnboardingScreen
 import com.dhruv.status.hub.ui.theme.StatusHubTheme
-import com.dhruv.status.hub.utils.isDarkModeEnabled
-import com.dhruv.status.hub.utils.isOnboardingComplete
-import com.dhruv.status.hub.utils.setOnboardingComplete
+import com.dhruv.status.hub.utils.*
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
 import kotlinx.coroutines.CoroutineScope
@@ -45,31 +44,36 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             val context = LocalContext.current
+            val systemInDarkTheme = isSystemInDarkTheme()
             
-            // State for the dark theme preference. 
-            // Re-evaluates whenever it's changed in settings.
-            var isDarkTheme by remember { 
-                mutableStateOf(isDarkModeEnabled(context)) 
+            // State for the app theme preference (System, Light, or Dark)
+            var currentThemePref by remember { 
+                mutableStateOf(getAppTheme(context)) 
             }
 
             // A trigger to refresh the theme state from SharedPreferences.
-            // When HomeScreen signals a theme change, this value increments,
-            // triggering the LaunchedEffect to update isDarkTheme.
             val themeRefreshTrigger = remember { mutableIntStateOf(0) }
             
             LaunchedEffect(themeRefreshTrigger.value) {
-                isDarkTheme = isDarkModeEnabled(context)
+                currentThemePref = getAppTheme(context)
+            }
+
+            // Calculate if we should use dark theme based on preference and system setting
+            val useDarkTheme = when (currentThemePref) {
+                THEME_LIGHT -> false
+                THEME_DARK -> true
+                else -> systemInDarkTheme
             }
 
             // Apply the app's custom theme
-            StatusHubTheme(darkTheme = isDarkTheme) {
+            StatusHubTheme(darkTheme = useDarkTheme) {
                 // Check if the user has already completed the onboarding process
                 var onboardingFinished by remember { 
                     mutableStateOf(isOnboardingComplete(context)) 
                 }
 
                 if (onboardingFinished) {
-                    // Navigate to HomeScreen if onboarding is complete
+                    // Pass the trigger to HomeScreen so it can notify when settings change
                     HomeScreen(onThemeChange = { 
                         themeRefreshTrigger.value += 1 
                     })

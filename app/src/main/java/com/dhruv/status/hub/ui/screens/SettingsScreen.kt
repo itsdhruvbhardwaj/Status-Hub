@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,7 +32,7 @@ import com.dhruv.status.hub.utils.*
  * Provides a user interface for app settings, including general preferences and app information.
  * 
  * @param onBack Callback for handling back navigation.
- * @param onThemeChange Callback for notifying theme changes (e.g., dark mode toggle).
+ * @param onThemeChange Callback for notifying theme changes (e.g., theme preference switch).
  * @param onHelpClick Callback for navigating to the Help/How to Use screen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,9 +45,10 @@ fun SettingsScreen(
     // Current context for accessing preferences and starting activities
     val context = LocalContext.current
     
-    // State for toggling auto-save status and dark mode, initialized from saved preferences
+    // State for toggling auto-save status and theme selection
     var autoSave by remember { mutableStateOf(isAutoSaveEnabled(context)) }
-    var darkMode by remember { mutableStateOf(isDarkModeEnabled(context)) }
+    var currentTheme by remember { mutableStateOf(getAppTheme(context)) }
+    var showThemeDialog by remember { mutableStateOf(false) }
 
     // Handle physical back button presses
     BackHandler { onBack() }
@@ -105,16 +107,15 @@ fun SettingsScreen(
             
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-            // Toggle for Dark Mode preference
-            SettingsToggleItem(
-                title = "Dark Mode",
-                subtitle = "Enable dark theme for the app",
-                checked = darkMode,
-                onCheckedChange = {
-                    darkMode = it
-                    setDarkModeEnabled(context, it)
-                    onThemeChange() // Notify parent of theme change
-                }
+            // Selection for App Theme (System, Light, Dark)
+            SettingsClickableItem(
+                title = "App Theme",
+                subtitle = when (currentTheme) {
+                    THEME_LIGHT -> "Light"
+                    THEME_DARK -> "Dark"
+                    else -> "System Default"
+                },
+                onClick = { showThemeDialog = true }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -152,6 +153,65 @@ fun SettingsScreen(
             )
         }
     }
+
+    // Theme Selection Dialog
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Choose Theme", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    ThemeOptionRow("System Default", currentTheme == THEME_SYSTEM) {
+                        currentTheme = THEME_SYSTEM
+                        setAppTheme(context, THEME_SYSTEM)
+                        onThemeChange()
+                        showThemeDialog = false
+                    }
+                    ThemeOptionRow("Light", currentTheme == THEME_LIGHT) {
+                        currentTheme = THEME_LIGHT
+                        setAppTheme(context, THEME_LIGHT)
+                        onThemeChange()
+                        showThemeDialog = false
+                    }
+                    ThemeOptionRow("Dark", currentTheme == THEME_DARK) {
+                        currentTheme = THEME_DARK
+                        setAppTheme(context, THEME_DARK)
+                        onThemeChange()
+                        showThemeDialog = false
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(28.dp)
+        )
+    }
+}
+
+/**
+ * Reusable row for theme options in the dialog
+ */
+@Composable
+fun ThemeOptionRow(
+    title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 0.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = isSelected, onClick = onClick)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text = title, fontSize = 16.sp)
+    }
 }
 
 /**
@@ -167,7 +227,13 @@ fun SettingsToggleItem(
     onCheckedChange: (Boolean) -> Unit
 ) {
     // Determine if the app is currently in dark theme
-    val isDark = isSystemInDarkTheme() || isDarkModeEnabled(LocalContext.current)
+    val context = LocalContext.current
+    val themePref = getAppTheme(context)
+    val isDark = when (themePref) {
+        THEME_LIGHT -> false
+        THEME_DARK -> true
+        else -> isSystemInDarkTheme()
+    }
     val blueColor = Color(0xFF3F5AA9)
 
     Row(
@@ -205,9 +271,10 @@ fun SettingsToggleItem(
 @Composable
 fun SettingsClickableItem(
     title: String,
+    subtitle: String? = null,
     onClick: () -> Unit
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -219,5 +286,12 @@ fun SettingsClickableItem(
             fontWeight = FontWeight.Normal,
             color = MaterialTheme.colorScheme.onBackground
         )
+        if (subtitle != null) {
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            )
+        }
     }
 }

@@ -44,11 +44,11 @@ fun downloadMedia(context: Context, uri: Uri, isAutoSave: Boolean = false) {
             return
         }
 
-        // Define the relative path in the public storage (Pictures/StatusHub or Movies/StatusHub)
+        // Define the relative path in the public storage (Pictures/StatusHub/Images or Movies/StatusHub/Videos)
         val relativePath = if (mimeType.startsWith("video")) {
-            Environment.DIRECTORY_MOVIES + File.separator + "StatusHub"
+            Environment.DIRECTORY_MOVIES + File.separator + "StatusHub" + File.separator + "Videos"
         } else {
-            Environment.DIRECTORY_PICTURES + File.separator + "StatusHub"
+            Environment.DIRECTORY_PICTURES + File.separator + "StatusHub" + File.separator + "Images"
         }
 
         // Metadata for the new file in MediaStore
@@ -111,7 +111,7 @@ fun getDownloadedMedia(context: Context): List<Uri> {
     val imageCollection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
     val videoCollection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
-    // Filter by the "StatusHub" directory name
+    // Filter by the "StatusHub" directory name (including subfolders)
     val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
     } else {

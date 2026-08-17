@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,12 +34,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
+import com.dhruv.status.hub.utils.isFavorite
+import com.dhruv.status.hub.utils.toggleFavorite
 
 /**
  * DownloadedMediaPreviewer Composable
  * 
  * A full-screen viewer specifically designed for downloaded media. 
- * Includes navigation (back), sharing, and deletion capabilities.
+ * Includes navigation (back), sharing, favorites, and deletion capabilities.
  * 
  * @param selectedMedia The URI of the media to show initially.
  * @param mediaList The list of all downloaded media URIs.
@@ -132,7 +136,7 @@ fun DownloadedMediaPreviewer(
             }
         }
 
-        // Bottom Action Bar overlay (Share/Delete)
+        // Bottom Action Bar overlay (Share/Favorite/Delete)
         AnimatedVisibility(
             visible = showControls || isCurrentVideo,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -204,7 +208,7 @@ fun DownloadedMediaPreviewer(
 /**
  * ActionBar Composable
  * 
- * Bottom bar containing Share and Delete actions.
+ * Bottom bar containing Share, Favorite, and Delete actions.
  */
 @Composable
 fun ActionBar(
@@ -213,6 +217,8 @@ fun ActionBar(
     background: Color
 ) {
     val context = LocalContext.current
+    var isFavorited by remember(uri) { mutableStateOf(isFavorite(context, uri.toString())) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -231,6 +237,18 @@ fun ActionBar(
             context.startActivity(Intent.createChooser(shareIntent, "Share Status"))
         }) {
             Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
+        }
+
+        // Toggle Favorite status
+        IconButton(onClick = {
+            toggleFavorite(context, uri.toString())
+            isFavorited = !isFavorited
+        }) {
+            Icon(
+                imageVector = if (isFavorited) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = "Favorite",
+                tint = if (isFavorited) Color.Red else Color.White
+            )
         }
 
         // Open deletion confirmation dialog
