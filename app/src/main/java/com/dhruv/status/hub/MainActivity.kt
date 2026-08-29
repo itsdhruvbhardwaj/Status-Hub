@@ -7,8 +7,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import com.dhruv.status.hub.ui.screens.DownloadFromLinkScreen
 import com.dhruv.status.hub.ui.screens.HomeScreen
 import com.dhruv.status.hub.ui.screens.OnboardingScreen
+import com.dhruv.status.hub.ui.screens.RecentDownloadsScreen
 import com.dhruv.status.hub.ui.theme.StatusHubTheme
 import com.dhruv.status.hub.utils.*
 import com.google.android.gms.ads.MobileAds
@@ -65,6 +67,9 @@ class MainActivity : ComponentActivity() {
                 else -> systemInDarkTheme
             }
 
+            // Simple navigation state
+            var currentScreen by remember { mutableStateOf("home") }
+
             // Apply the app's custom theme
             StatusHubTheme(darkTheme = useDarkTheme) {
                 // Check if the user has already completed the onboarding process
@@ -73,10 +78,26 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (onboardingFinished) {
-                    // Pass the trigger to HomeScreen so it can notify when settings change
-                    HomeScreen(onThemeChange = { 
-                        themeRefreshTrigger.value += 1 
-                    })
+                    when (currentScreen) {
+                        "home" -> {
+                            HomeScreen(
+                                onThemeChange = { themeRefreshTrigger.value += 1 },
+                                onNavigateToDownloadLink = { currentScreen = "download_link" },
+                                onNavigateToRecentDownloads = { currentScreen = "recent_downloads" }
+                            )
+                        }
+                        "download_link" -> {
+                            DownloadFromLinkScreen(
+                                onBack = { currentScreen = "home" },
+                                onNavigateToRecentDownloads = { currentScreen = "recent_downloads" }
+                            )
+                        }
+                        "recent_downloads" -> {
+                            RecentDownloadsScreen(
+                                onBack = { currentScreen = "home" }
+                            )
+                        }
+                    }
                 } else {
                     // Show OnboardingScreen for new users
                     OnboardingScreen(

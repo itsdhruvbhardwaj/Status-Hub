@@ -3,6 +3,7 @@ package com.dhruv.status.hub.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.ui.unit.sp
  * 
  * @param isSelectionMode Whether multi-selection is active.
  * @param selectedCount The number of items currently selected.
+ * @param onMenuClick Callback for the hamburger menu icon.
  * @param onSettingsClick Callback for the settings icon button.
  * @param onDeleteClick Callback for the delete icon button.
  */
@@ -29,6 +31,7 @@ import androidx.compose.ui.unit.sp
 fun HomeTopBar(
     isSelectionMode: Boolean,
     selectedCount: Int,
+    onMenuClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
@@ -47,6 +50,14 @@ fun HomeTopBar(
                         fontFamily = FontFamily.Cursive,
                         fontSize = 28.sp
                     )
+                }
+            },
+            navigationIcon = {
+                // Show hamburger menu if not in selection mode
+                if (!isSelectionMode) {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, contentDescription = "Menu")
+                    }
                 }
             },
             actions = {
@@ -68,6 +79,7 @@ fun HomeTopBar(
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
             )
         )

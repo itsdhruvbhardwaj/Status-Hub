@@ -1,53 +1,58 @@
 package com.dhruv.status.hub.ui.components
 
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 
 /**
  * VideoPlayer Composable
  * 
- * A wrapper around Media3 ExoPlayer and PlayerView to play video content in Compose.
- * 
- * @param uri The URI of the video to be played.
- * @param modifier Modifier for sizing and layout.
+ * Optimized to handle both Video and Audio playback.
  */
+@OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayer(
     uri: Uri,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    autoPlay: Boolean = true
 ) {
     val context = LocalContext.current
 
-    // Initialize ExoPlayer and prepare it with the provided media URI
-    val exoPlayer = remember {
+    val exoPlayer = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             prepare()
-            // Don't start playing automatically
-            playWhenReady = false
+            playWhenReady = autoPlay
+            repeatMode = Player.REPEAT_MODE_OFF
         }
     }
 
-    // Integrate the traditional Android View (PlayerView) into the Compose hierarchy
-    DisposableEffect(
-        AndroidView(
-            factory = {
-                PlayerView(it).apply {
-                    player = exoPlayer
-                }
-            },
-            modifier = modifier
-        )
-    ) {
-        // Clean up resources when the Composable is removed from the composition
+    DisposableEffect(exoPlayer) {
         onDispose {
             exoPlayer.release()
         }
     }
+
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                player = exoPlayer
+                useController = true
+                controllerAutoShow = true
+                showController()
+            }
+        },
+        modifier = modifier,
+        update = { playerView ->
+            playerView.player = exoPlayer
+        }
+    )
 }

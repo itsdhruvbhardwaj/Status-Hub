@@ -19,9 +19,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,9 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
 import com.dhruv.status.hub.utils.isFavorite
 import com.dhruv.status.hub.utils.toggleFavorite
@@ -40,13 +45,7 @@ import com.dhruv.status.hub.utils.toggleFavorite
 /**
  * DownloadedMediaPreviewer Composable
  * 
- * A full-screen viewer specifically designed for downloaded media. 
- * Includes navigation (back), sharing, favorites, and deletion capabilities.
- * 
- * @param selectedMedia The URI of the media to show initially.
- * @param mediaList The list of all downloaded media URIs.
- * @param onClose Callback to exit the previewer.
- * @param onDelete Callback triggered when an item is confirmed for deletion.
+ * Updated to support Video, Image, and Audio playback.
  */
 @Composable
 fun DownloadedMediaPreviewer(
@@ -62,12 +61,9 @@ fun DownloadedMediaPreviewer(
         pageCount = { mediaList.size }
     )
 
-    // State to toggle UI overlays (buttons/bars) for images
     var showControls by remember { mutableStateOf(true) }
-    // State to show/hide the deletion confirmation dialog
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    // Intercept back button to close the viewer
     BackHandler { onClose() }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -76,31 +72,67 @@ fun DownloadedMediaPreviewer(
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val itemUri = mediaList[page]
-            val isVideo = context.contentResolver.getType(itemUri)?.startsWith("video") == true ||
-                    itemUri.toString().lowercase().contains(".mp4")
+            val mimeType = context.contentResolver.getType(itemUri) ?: ""
+            val isVideo = mimeType.startsWith("video") || itemUri.toString().lowercase().contains(".mp4")
+            val isAudio = mimeType.startsWith("audio") || itemUri.toString().lowercase().contains(".mp3") || itemUri.toString().lowercase().contains(".m4a")
 
-            if (isVideo) {
-                // Layout for video content with space reserved for native controls
-                Column(modifier = Modifier.fillMaxSize()) {
-                    VideoPlayer(uri = itemUri, modifier = Modifier.weight(1f))
-                    Spacer(modifier = Modifier.navigationBarsPadding().height(48.dp))
+            when {
+                isVideo -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        VideoPlayer(uri = itemUri, modifier = Modifier.weight(1f))
+                        Spacer(modifier = Modifier.navigationBarsPadding().height(60.dp))
+                    }
                 }
-            } else {
-                // Layout for images with toggleable controls on tap
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { showControls = !showControls },
-                    contentAlignment = Alignment.Center
-                ) {
-                    AsyncImage(
-                        model = itemUri,
-                        contentDescription = "Image preview",
-                        modifier = Modifier.fillMaxSize()
-                    )
+                isAudio -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        // Audio Visualizer / Placeholder
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                shape = CircleShape,
+                                modifier = Modifier.size(120.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(32.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(24.dp))
+                            val fileName = DocumentFile.fromSingleUri(context, itemUri)?.name ?: "Audio File"
+                            Text(
+                                text = fileName,
+                                color = Color.White,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 32.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(48.dp))
+                            // Reuse VideoPlayer logic for audio as it's an ExoPlayer wrapper
+                            VideoPlayer(uri = itemUri, modifier = Modifier.height(100.dp).fillMaxWidth())
+                        }
+                    }
+                }
+                else -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { showControls = !showControls },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = itemUri,
+                            contentDescription = "Image preview",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -108,18 +140,17 @@ fun DownloadedMediaPreviewer(
         // --- Overlays ---
 
         val currentUri = mediaList[pagerState.currentPage]
-        val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
-                currentUri.toString().lowercase().contains(".mp4")
+        val mimeType = context.contentResolver.getType(currentUri) ?: ""
+        val isPlaybackMedia = mimeType.startsWith("video") || mimeType.startsWith("audio") || 
+                             currentUri.toString().lowercase().let { it.contains(".mp4") || it.contains(".mp3") || it.contains(".m4a") }
 
-        // Smoothly animate the background color of the action bar based on content type
         val barBackground by animateColorAsState(
-            targetValue = if (isCurrentVideo) Color.Black else Color.Black.copy(alpha = 0.4f),
+            targetValue = if (isPlaybackMedia) Color.Black else Color.Black.copy(alpha = 0.4f),
             label = "barBackground"
         )
 
-        // Floating Back Button overlay
         AnimatedVisibility(
-            visible = showControls || isCurrentVideo,
+            visible = showControls || isPlaybackMedia,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopStart)
@@ -136,9 +167,8 @@ fun DownloadedMediaPreviewer(
             }
         }
 
-        // Bottom Action Bar overlay (Share/Favorite/Delete)
         AnimatedVisibility(
-            visible = showControls || isCurrentVideo,
+            visible = showControls || isPlaybackMedia,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -151,12 +181,8 @@ fun DownloadedMediaPreviewer(
         }
     }
 
-    // Modal dialog for confirming deletion
     if (showDeleteDialog) {
         val currentUri = mediaList[pagerState.currentPage]
-        val isCurrentVideo = context.contentResolver.getType(currentUri)?.startsWith("video") == true ||
-                currentUri.toString().lowercase().contains(".mp4")
-
         Dialog(onDismissRequest = { showDeleteDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(28.dp),
@@ -167,7 +193,7 @@ fun DownloadedMediaPreviewer(
                     modifier = Modifier.padding(top = 24.dp, start = 24.dp, end = 24.dp, bottom = 16.dp)
                 ) {
                     Text(
-                        text = "Delete this ${if (isCurrentVideo) "video" else "image"}?",
+                        text = "Delete this file permanently?",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Normal
@@ -189,12 +215,8 @@ fun DownloadedMediaPreviewer(
                                 showDeleteDialog = false
                                 onDelete(currentUri)
                             },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            shape = RoundedCornerShape(50),
-                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(50)
                         ) {
                             Text("Delete", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
@@ -207,8 +229,6 @@ fun DownloadedMediaPreviewer(
 
 /**
  * ActionBar Composable
- * 
- * Bottom bar containing Share, Favorite, and Delete actions.
  */
 @Composable
 fun ActionBar(
@@ -227,19 +247,17 @@ fun ActionBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Trigger system share sheet for the current media item
         IconButton(onClick = {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = context.contentResolver.getType(uri) ?: "image/*"
+                type = context.contentResolver.getType(uri) ?: "*/*"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(shareIntent, "Share Status"))
+            context.startActivity(Intent.createChooser(shareIntent, "Share Media"))
         }) {
             Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
         }
 
-        // Toggle Favorite status
         IconButton(onClick = {
             toggleFavorite(context, uri.toString())
             isFavorited = !isFavorited
@@ -251,7 +269,6 @@ fun ActionBar(
             )
         }
 
-        // Open deletion confirmation dialog
         IconButton(onClick = onDeleteClick) {
             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
         }
