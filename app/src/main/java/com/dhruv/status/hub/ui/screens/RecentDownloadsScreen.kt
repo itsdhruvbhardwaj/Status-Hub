@@ -5,6 +5,7 @@ import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,7 +31,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.dhruv.status.hub.data.DownloadRecord
+import com.dhruv.status.hub.ui.components.AdBanner
 import com.dhruv.status.hub.ui.viewmodels.DownloadViewModel
+import com.dhruv.status.hub.utils.DownloadManager
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -41,7 +44,15 @@ fun RecentDownloadsScreen(
     viewModel: DownloadViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val history by viewModel.downloadHistory.collectAsState()
+    val allDownloads by viewModel.allDownloads.collectAsState()
+    val speeds by DownloadManager.downloadSpeeds.collectAsState()
+    
+    val activeDownloads = allDownloads.filter { it.status == "DOWNLOADING" }
+    val pausedDownloads = allDownloads.filter { it.status == "PAUSED" }
+    val queuedDownloads = allDownloads.filter { it.status == "QUEUED" }
+    val failedDownloads = allDownloads.filter { it.status == "FAILED" }
+    val completedDownloads = allDownloads.filter { it.status == "COMPLETED" }
+    
     var showDeleteDialog by remember { mutableStateOf<DownloadRecord?>(null) }
 
     BackHandler { onBack() }
@@ -52,7 +63,7 @@ fun RecentDownloadsScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "Recent Downloads",
+                            text = "Downloads",
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Cursive,
                             fontSize = 28.sp
@@ -62,21 +73,17 @@ fun RecentDownloadsScreen(
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    }
                 )
             }
+        },
+        bottomBar = {
+            AdBanner()
         }
     ) { innerPadding ->
-        if (history.isEmpty()) {
+        if (allDownloads.isEmpty()) {
             EmptyHistoryContent(modifier = Modifier.padding(innerPadding))
         } else {
-            val groupedHistory = remember(history) { groupHistory(history) }
-            
             LazyColumn(
                 modifier = Modifier
                     .padding(innerPadding)
@@ -84,31 +91,87 @@ fun RecentDownloadsScreen(
                     .background(MaterialTheme.colorScheme.background),
                 contentPadding = PaddingValues(16.dp)
             ) {
-                groupedHistory.forEach { (section, records) ->
+                // ACTIVE Section
+                if (activeDownloads.isNotEmpty() || pausedDownloads.isNotEmpty() || failedDownloads.isNotEmpty()) {
                     item {
                         Text(
-                            text = section,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            text = "ACTIVE",
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
                     }
-                    items(records, key = { it.id }) { record ->
-                        HistoryItem(
+                    items(activeDownloads + pausedDownloads + failedDownloads, key = { it.id }) { record ->
+                        ActiveDownloadItem(
                             record = record,
-                            onOpen = { openFile(context, record.fileUri) },
-                            onShare = { shareFile(context, record.fileUri) },
-                            onDelete = { showDeleteDialog = record }
+                            speed = speeds[record.id] ?: 0L,
+                            onPause = { viewModel.pauseDownload(context, record.id) },
+                            onResume = { viewModel.resumeDownload(context, record.id) },
+                            onCancel = { viewModel.cancelDownload(context, record.id) }
                         )
                     }
                 }
-                item { Spacer(modifier = Modifier.height(80.dp)) }
+
+                // QUEUED Section
+                if (queuedDownloads.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "QUEUED",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(queuedDownloads, key = { it.id }) { record ->
+                        ActiveDownloadItem(
+                            record = record,
+                            speed = 0L,
+                            onPause = {},
+                            onResume = {},
+                            onCancel = { viewModel.cancelDownload(context, record.id) }
+                        )
+                    }
+                }
+
+                // COMPLETED Section
+                if (completedDownloads.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "COMPLETED",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    
+                    val grouped = groupHistory(completedDownloads)
+                    grouped.forEach { (section, records) ->
+                        item {
+                            Text(
+                                text = section,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                        items(records, key = { it.id }) { record ->
+                            HistoryItem(
+                                record = record,
+                                onOpen = { openFile(context, record.fileUri ?: "") },
+                                onShare = { shareFile(context, record.fileUri ?: "") },
+                                onDelete = { showDeleteDialog = record }
+                            )
+                        }
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(100.dp)) }
             }
         }
     }
 
-    // Refined Deletion Dialog
     showDeleteDialog?.let { record ->
         AlertDialog(
             onDismissRequest = { showDeleteDialog = null },
@@ -146,94 +209,136 @@ fun RecentDownloadsScreen(
 }
 
 @Composable
-fun HistoryItem(
+fun ActiveDownloadItem(
     record: DownloadRecord,
-    onOpen: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit
+    speed: Long,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onCancel: () -> Unit
 ) {
+    val isQueued = record.status == "QUEUED"
+    val isFailed = record.status == "FAILED"
+    val isPaused = record.status == "PAUSED"
+    val progress = if (record.totalBytes > 0) record.downloadedBytes.toFloat() / record.totalBytes else 0f
+    val percentText = if (record.totalBytes > 0) "${(progress * 100).toInt()}%" else "..."
+    
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-        onClick = onOpen
+        colors = CardDefaults.cardColors(
+            containerColor = if (isQueued) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        ),
+        border = if (isQueued) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) else null
     ) {
-        Row(
-            modifier = Modifier
-                .padding(8.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Thumbnail / Icon
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                if (record.mediaType == "video" || record.mediaType == "image") {
-                    AsyncImage(
-                        model = record.fileUri.toUri(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    if (record.mediaType == "video") {
-                        Icon(
-                            Icons.Default.PlayCircle,
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Thumbnail
+                Box(
+                    modifier = Modifier.size(50.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!record.thumbnailUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = record.thumbnailUrl,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(24.dp)
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isQueued) Icons.Default.HourglassEmpty
+                            else if (record.mediaType == "audio") Icons.Default.MusicNote 
+                            else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = if (isQueued) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
                         )
                     }
-                } else {
-                    Icon(
-                        imageVector = if (record.mediaType == "audio") Icons.Default.AudioFile else Icons.Default.Description,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
+                }
+                
+                Spacer(Modifier.width(12.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(record.fileName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+                    Text(
+                        text = if (isQueued) "Waiting for connection..." 
+                               else "${record.quality} • ${record.format.uppercase()}", 
+                        fontSize = 12.sp, 
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                
+                if (record.status == "DOWNLOADING") {
+                    IconButton(onClick = onPause) { Icon(Icons.Default.Pause, null) }
+                } else if (isPaused || isQueued || isFailed) {
+                    IconButton(onClick = onResume) { Icon(Icons.Default.PlayArrow, null) }
+                }
+                IconButton(onClick = onCancel) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error) }
             }
+
+            Spacer(Modifier.height(16.dp))
             
-            Spacer(modifier = Modifier.width(12.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = record.fileName,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            if (isQueued) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                 )
+            } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = formatFileSize(record.fileSize),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
+                        color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
+                    Spacer(Modifier.width(12.dp))
                     Text(
-                        text = " • ",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = formatDownloadDate(record.timestamp),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        text = percentText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
                 }
             }
             
-            Row {
-                IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, "Share", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(12.dp))
+            
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text(
+                        text = if (isQueued) "Queued" 
+                               else "${formatFileSize(record.downloadedBytes)} / ${formatFileSize(record.totalBytes)}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (isFailed) {
+                        Text(
+                            text = record.errorMessage ?: "Download failed",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.DeleteOutline, "Delete", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                
+                if (record.status == "DOWNLOADING" && speed > 0) {
+                    val remainingBytes = record.totalBytes - record.downloadedBytes
+                    val eta = if (remainingBytes > 0) remainingBytes / speed else 0L
+                    
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Speed: ${formatFileSize(speed)}/s",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = if (eta > 0) "Remaining: ~${formatEta(eta)}" else "Finishing...",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -241,76 +346,114 @@ fun HistoryItem(
 }
 
 @Composable
-private fun EmptyHistoryContent(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+fun HistoryItem(
+    record: DownloadRecord,
+    onOpen: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        onClick = onOpen,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
+        Row(
+            modifier = Modifier.padding(10.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!record.thumbnailUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = record.thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (record.mediaType == "audio") Icons.Default.AudioFile else Icons.Default.VideoFile,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(record.fileName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${record.quality} • ${formatFileSize(record.totalBytes)} • ${record.format.uppercase()}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            
+            IconButton(onClick = onShare) {
+                Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyHistoryContent(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Default.History,
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
-            )
+            Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             Spacer(Modifier.height(16.dp))
-            Text(
-                "Your download history is empty.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                "Downloaded links will appear here.",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.padding(top = 4.dp)
-            )
+            Text("No downloads found", color = MaterialTheme.colorScheme.outline)
         }
     }
 }
 
 private fun groupHistory(records: List<DownloadRecord>): Map<String, List<DownloadRecord>> {
-    val today = Calendar.getInstance().apply { 
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    val today = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
     val yesterday = today - DateUtils.DAY_IN_MILLIS
-
     return records.groupBy { record ->
         when {
             record.timestamp >= today -> "Today"
             record.timestamp >= yesterday -> "Yesterday"
-            else -> "Earlier"
+            else -> SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault()).format(Date(record.timestamp))
         }
     }
 }
 
 private fun formatFileSize(size: Long): String {
-    if (size <= 0) return "Indeterminate"
+    if (size <= 0) return "0 B"
     val units = arrayOf("B", "KB", "MB", "GB")
-    val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
+    val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
     return "%.1f %s".format(size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }
 
-private fun formatDownloadDate(timestamp: Long): String {
-    return SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(timestamp))
+private fun formatEta(seconds: Long): String {
+    return if (seconds >= 3600) {
+        "%d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    } else {
+        "%d:%02d".format(seconds / 60, seconds % 60)
+    }
 }
 
-private fun openFile(context: Context, filePath: String) {
+private fun openFile(context: Context, uriString: String) {
     try {
-        val uri = filePath.toUri()
+        val uri = uriString.toUri()
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, context.contentResolver.getType(uri))
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(intent)
     } catch (e: Exception) {
-        Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show()
     }
 }
 
-private fun shareFile(context: Context, filePath: String) {
+private fun shareFile(context: Context, uriString: String) {
     try {
-        val uri = filePath.toUri()
+        val uri = uriString.toUri()
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = context.contentResolver.getType(uri) ?: "*/*"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -318,6 +461,6 @@ private fun shareFile(context: Context, filePath: String) {
         }
         context.startActivity(Intent.createChooser(intent, "Share Media"))
     } catch (e: Exception) {
-        Toast.makeText(context, "Cannot share this file", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Cannot share file", Toast.LENGTH_SHORT).show()
     }
 }

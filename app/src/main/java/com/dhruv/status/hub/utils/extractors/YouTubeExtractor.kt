@@ -13,10 +13,13 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.VideoStream
 
 /**
  * Robust YouTube Extractor that uses NewPipeExtractor library.
+ * Updated to prefer M4A for audio compatibility with Android MediaStore.
  */
 class YouTubeExtractor(private val okHttpClient: OkHttpClient) : MediaExtractor {
 
@@ -54,16 +57,14 @@ class YouTubeExtractor(private val okHttpClient: OkHttpClient) : MediaExtractor 
                             .url(url)
                             .method(method, requestBody)
 
-                        // Add all headers from NewPipeExtractor
                         headers.forEach { (key, values) ->
                             values.forEach { value ->
                                 builder.addHeader(key, value)
                             }
                         }
 
-                        // Ensure a Browser-like User-Agent if not provided
                         if (headers.none { it.key.equals("User-Agent", ignoreCase = true) }) {
-                            builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                            builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
                         }
 
                         val okHttpRequest = builder.build()
@@ -102,42 +103,80 @@ class YouTubeExtractor(private val okHttpClient: OkHttpClient) : MediaExtractor 
         try {
             Log.d(tag, "Starting extraction for: $url")
             val service = ServiceList.YouTube
-            
-            // Normalize URL for shorts
             val normalizedUrl = if (url.contains("/shorts/")) {
                 url.replace("/shorts/", "/watch?v=")
             } else url
 
             val streamInfo = StreamInfo.getInfo(service, normalizedUrl)
+            val streamName = streamInfo.name ?: "YouTube_Video"
+            val sanitizedName = streamName.replace(Regex("[^a-zA-Z0-9]"), "_")
             
-            // Prefer muxed streams (itag 22 = 720p, 18 = 360p)
-            val videoStream = streamInfo.videoStreams.find { it.itag == 22 }
-                ?: streamInfo.videoStreams.find { it.itag == 18 }
-                ?: streamInfo.videoStreams.maxByOrNull { 
-                    it.resolution ?: ""
+            val formats = mutableListOf<NetworkDownloadUtils.MediaFormat>()
+
+            // 1. Add Video + Audio (Muxed) streams
+            streamInfo.videoStreams
+                .filter { vs -> vs.itag == 18 || vs.itag == 22 }
+                .take(3)
+                .forEach { vs ->
+                    formats.add(
+                        NetworkDownloadUtils.MediaFormat(
+                            id = "v_${vs.itag}_${vs.format?.suffix}",
+                            url = vs.url ?: "",
+                            quality = vs.resolution ?: "Unknown",
+                            extension = vs.format?.suffix ?: "mp4",
+                            format = vs.format?.name ?: "MP4",
+                            size = -1L,
+                            isAudio = false,
+                            hasVideo = true,
+                            hasAudio = true,
+                            note = "Direct"
+                        )
+                    )
                 }
 
-            val audioStream = streamInfo.audioStreams.maxByOrNull { it.bitrate }
+            // 2. Add Audio-only streams - Prefer M4A for compatibility
+            streamInfo.audioStreams
+                .sortedWith(compareByDescending<AudioStream> { it.bitrate }
+                    .thenByDescending { it.format?.suffix == "m4a" })
+                .distinctBy { it.bitrate / 1000 }
+                .take(2) 
+                .forEach { as_ ->
+                    val bitrateKbps = if (as_.bitrate > 0) as_.bitrate / 1000 else 128
+                    val ext = as_.format?.suffix ?: "m4a"
+                    
+                    formats.add(
+                        NetworkDownloadUtils.MediaFormat(
+                            id = "a_${as_.itag}_${as_.bitrate}_$ext",
+                            url = as_.url ?: "",
+                            quality = "${bitrateKbps} kbps",
+                            extension = ext,
+                            format = if (ext == "m4a") "M4A" else "WEBM",
+                            size = -1L,
+                            isAudio = true,
+                            hasVideo = false,
+                            hasAudio = true,
+                            note = if (ext == "m4a") "MPEG-4 Audio" else "Opus Audio"
+                        )
+                    )
+                }
 
-            if (videoStream != null) {
-                val formatSuffix = videoStream.format?.suffix ?: "mp4"
-                val streamName = streamInfo.name ?: "YouTube_Video"
-                
+            if (formats.isNotEmpty()) {
+                val bestFormat = formats.firstOrNull { !it.isAudio } ?: formats.firstOrNull()
+
                 return@withContext NetworkDownloadUtils.MediaInfo(
-                    url = videoStream.url ?: "",
-                    fileName = "${streamName.replace(Regex("[^a-zA-Z0-9]"), "_")}.$formatSuffix",
-                    contentType = if (formatSuffix == "webm") "video/webm" else "video/mp4",
+                    url = bestFormat?.url ?: "",
+                    fileName = "$sanitizedName.${bestFormat?.extension ?: "mp4"}",
+                    contentType = if (bestFormat?.extension == "webm") "video/webm" else if (bestFormat?.isAudio == true) "audio/mp4" else "video/mp4",
                     contentLength = -1L,
-                    extension = formatSuffix,
-                    mediaType = "video",
+                    extension = bestFormat?.extension ?: "mp4",
+                    mediaType = if (bestFormat?.isAudio == true) "audio" else "video",
                     platform = "YouTube",
                     thumbnailUrl = if (streamInfo.thumbnails.isNotEmpty()) streamInfo.thumbnails[0].url else null,
-                    audioUrl = audioStream?.url ?: videoStream.url
+                    audioUrl = streamInfo.audioStreams.maxByOrNull { it.bitrate }?.url,
+                    formats = formats
                 )
-            } else {
-                Log.e(tag, "No video stream found for $url")
-                null
             }
+            null
         } catch (e: Exception) {
             Log.e(tag, "Extraction failed for $url: ${e.message}", e)
             null

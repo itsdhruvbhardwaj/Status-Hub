@@ -1,6 +1,6 @@
 package com.dhruv.status.hub.ui.screens
 
-import android.R.attr.versionName
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -12,7 +12,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -22,17 +21,12 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Share
@@ -43,7 +37,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,9 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import coil.compose.AsyncImage
 import com.dhruv.status.hub.R
 import com.dhruv.status.hub.ui.components.*
 import com.dhruv.status.hub.utils.*
@@ -74,7 +65,6 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val adManager = remember { InterstitialAdManager(context) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -102,7 +92,10 @@ fun HomeScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { adManager.loadAd() }
+    // Preload ad on screen start
+    LaunchedEffect(Unit) { 
+        AdsManager.loadInterstitial(context) 
+    }
 
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -161,7 +154,7 @@ fun HomeScreen(
                 } catch (e: Exception) { e.printStackTrace() }
             }
         }
-        downloadedList = getDownloadedMedia(context)
+        downloadedList = FileUtils.getDownloadedMedia(context)
         isLoadingFirstTime = false
     }
 
@@ -174,7 +167,7 @@ fun HomeScreen(
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) {
-            downloadedList = getDownloadedMedia(context)
+            downloadedList = FileUtils.getDownloadedMedia(context)
             favorites = getFavorites(context)
         } else {
             selectedItems.value = emptySet()
@@ -190,7 +183,7 @@ fun HomeScreen(
                 }
             }
             selectedItems.value = emptySet()
-            downloadedList = getDownloadedMedia(context)
+            downloadedList = FileUtils.getDownloadedMedia(context)
             favorites = getFavorites(context)
         }
     }
@@ -296,7 +289,7 @@ fun HomeScreen(
                         mediaList = downloadedList, 
                         onClose = { 
                             selectedMedia = null
-                            downloadedList = getDownloadedMedia(context)
+                            downloadedList = FileUtils.getDownloadedMedia(context)
                             favorites = getFavorites(context)
                         }, 
                         onDelete = { deleteUri -> 
@@ -304,14 +297,19 @@ fun HomeScreen(
                                 withContext(Dispatchers.IO) { 
                                     try { context.contentResolver.delete(deleteUri, null, null) } catch (e: Exception) {} 
                                 }
-                                downloadedList = getDownloadedMedia(context)
+                                downloadedList = FileUtils.getDownloadedMedia(context)
                                 favorites = getFavorites(context)
                                 selectedMedia = null
                             }
                         }
                     )
                 } else {
-                    MediaPreviewer(selectedMedia = uri, mediaList = if (context.contentResolver.getType(uri)?.startsWith("video") == true) videoList else imageList, onClose = { selectedMedia = null }, adManager = adManager, showDownloadButton = true)
+                    MediaPreviewer(
+                        selectedMedia = uri, 
+                        mediaList = if (context.contentResolver.getType(uri)?.startsWith("video") == true) videoList else imageList, 
+                        onClose = { selectedMedia = null }, 
+                        showDownloadButton = true
+                    )
                 }
             }
         }
@@ -582,7 +580,7 @@ fun ModernFolderItem(folder: FolderInfo, onClick: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.weight(1f))
                     Icon(
-                        Icons.Default.ArrowForward, 
+                        Icons.Default.ArrowForward,
                         null, 
                         tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                         modifier = Modifier.size(12.dp)
@@ -621,7 +619,7 @@ fun HomeDrawerContent(
             NavigationDrawerItem(label = { Text("Favorites") }, selected = false, onClick = onFavoritesClick, icon = { Icon(Icons.Default.Favorite, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
             HorizontalDivider(Modifier.padding(vertical = 16.dp, horizontal = 24.dp))
             NavigationDrawerItem(label = { Text("Settings") }, selected = false, onClick = onSettingsClick, icon = { Icon(Icons.Default.Settings, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
-            NavigationDrawerItem(label = { Text("Help & FAQ") }, selected = false, onClick = onHelpClick, icon = { Icon(Icons.AutoMirrored.Filled.Help, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
+            NavigationDrawerItem(label = { Text("Help & FAQ") }, selected = false, onClick = onHelpClick, icon = { Icon(Icons.Default.Help, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
             Spacer(Modifier.height(24.dp))
         }
     }

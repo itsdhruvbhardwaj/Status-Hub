@@ -1,5 +1,6 @@
 package com.dhruv.status.hub
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,9 +27,19 @@ import kotlinx.coroutines.launch
  * onboarding flow, and theme management.
  */
 class MainActivity : ComponentActivity() {
+    
+    // State to hold shared URL from intent
+    private var sharedUrlState = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Initialize Download Manager to recover stuck downloads
+        DownloadManager.init(this)
+
+        // Handle initial intent
+        handleIntent(intent)
+
         // Initialize Google Mobile Ads SDK on a background thread
         CoroutineScope(Dispatchers.IO).launch {
             MobileAds.initialize(this@MainActivity) {
@@ -38,6 +49,9 @@ class MainActivity : ComponentActivity() {
                     .setTestDeviceIds(testDeviceIds)
                     .build()
                 MobileAds.setRequestConfiguration(configuration)
+                
+                // Preload the first interstitial ad
+                AdsManager.loadInterstitial(this@MainActivity)
             }
         }
 
@@ -69,6 +83,14 @@ class MainActivity : ComponentActivity() {
 
             // Simple navigation state
             var currentScreen by remember { mutableStateOf("home") }
+            val sharedUrl by sharedUrlState
+
+            // Navigate to download link screen if a URL is shared
+            LaunchedEffect(sharedUrl) {
+                if (sharedUrl != null) {
+                    currentScreen = "download_link"
+                }
+            }
 
             // Apply the app's custom theme
             StatusHubTheme(darkTheme = useDarkTheme) {
@@ -82,13 +104,20 @@ class MainActivity : ComponentActivity() {
                         "home" -> {
                             HomeScreen(
                                 onThemeChange = { themeRefreshTrigger.value += 1 },
-                                onNavigateToDownloadLink = { currentScreen = "download_link" },
+                                onNavigateToDownloadLink = { 
+                                    sharedUrlState.value = null
+                                    currentScreen = "download_link" 
+                                },
                                 onNavigateToRecentDownloads = { currentScreen = "recent_downloads" }
                             )
                         }
                         "download_link" -> {
                             DownloadFromLinkScreen(
-                                onBack = { currentScreen = "home" },
+                                initialUrl = sharedUrl,
+                                onBack = { 
+                                    sharedUrlState.value = null
+                                    currentScreen = "home" 
+                                },
                                 onNavigateToRecentDownloads = { currentScreen = "recent_downloads" }
                             )
                         }
@@ -109,6 +138,19 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val url = IntentUtils.extractUrlFromIntent(intent)
+        if (url != null) {
+            sharedUrlState.value = url
         }
     }
 }

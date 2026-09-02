@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dhruv.status.hub.data.DownloadDatabase
 import com.dhruv.status.hub.data.DownloadRecord
+import com.dhruv.status.hub.utils.DownloadManager
 import com.dhruv.status.hub.utils.NetworkDownloadUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     private val _downloadState = MutableStateFlow<NetworkDownloadUtils.DownloadState>(NetworkDownloadUtils.DownloadState.Idle)
     val downloadState: StateFlow<NetworkDownloadUtils.DownloadState> = _downloadState
 
-    val downloadHistory: StateFlow<List<DownloadRecord>> = downloadDao.getAllRecords()
+    val allDownloads: StateFlow<List<DownloadRecord>> = downloadDao.getAllRecords()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -41,33 +42,49 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun downloadMedia(context: Context, info: NetworkDownloadUtils.MediaInfo, forceDownload: Boolean = false, isAudioOnly: Boolean = false) {
-        viewModelScope.launch(Dispatchers.IO) {
-            NetworkDownloadUtils.downloadMedia(context, info, forceDownload, isAudioOnly) { state ->
-                _downloadState.value = state
-                if (state is NetworkDownloadUtils.DownloadState.Success) {
-                    saveDownloadRecord(info, state.filePath, isAudioOnly)
-                }
-            }
-        }
+    /**
+     * Enqueues a download. 
+     * Requirement: Do not force .mp3 extension if the source is not genuinely MP3.
+     */
+    fun enqueueDownload(
+        context: Context,
+        info: NetworkDownloadUtils.MediaInfo,
+        format: NetworkDownloadUtils.MediaFormat?,
+        isAudioOnly: Boolean = false
+    ) {
+        // Use the actual extension from the selected format to avoid fake .mp3 files
+        val actualExtension = format?.extension ?: info.extension
+        val finalMediaType = if (isAudioOnly || format?.isAudio == true) "audio" else info.mediaType
+        
+        val record = DownloadRecord(
+            sourceUrl = info.url,
+            fileName = if (format != null) {
+                val base = info.fileName.substringBeforeLast(".")
+                "$base.${format.extension}"
+            } else {
+                val base = info.fileName.substringBeforeLast(".")
+                "$base.$actualExtension"
+            },
+            mediaType = finalMediaType,
+            format = actualExtension, // Store the actual codec extension
+            quality = format?.quality ?: "Default",
+            bitrate = if (isAudioOnly && format != null) {
+                format.quality.filter { it.isDigit() }.toIntOrNull()
+            } else null,
+            platform = info.platform,
+            status = "QUEUED",
+            thumbnailUrl = info.thumbnailUrl,
+            downloadUrl = format?.url ?: info.url,
+            totalBytes = format?.size ?: -1L
+        )
+        
+        DownloadManager.enqueue(context, record)
+        resetState()
     }
 
-    private fun saveDownloadRecord(info: NetworkDownloadUtils.MediaInfo, fileUri: String, isAudioOnly: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val record = DownloadRecord(
-                sourceUrl = info.url,
-                fileUri = fileUri,
-                fileName = if (isAudioOnly) info.fileName.substringBeforeLast(".") + ".mp3" else info.fileName,
-                mediaType = if (isAudioOnly) "audio" else info.mediaType,
-                format = if (isAudioOnly) "mp3" else info.extension,
-                fileSize = info.contentLength,
-                timestamp = System.currentTimeMillis(),
-                platform = info.platform,
-                status = "success"
-            )
-            downloadDao.insertRecord(record)
-        }
-    }
+    fun pauseDownload(context: Context, id: Long) = DownloadManager.pause(context, id)
+    fun resumeDownload(context: Context, id: Long) = DownloadManager.resume(context, id)
+    fun cancelDownload(context: Context, id: Long) = DownloadManager.cancel(context, id)
 
     fun deleteRecord(record: DownloadRecord) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -78,8 +95,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     fun deleteFileAndRecord(context: Context, record: DownloadRecord) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val uri = Uri.parse(record.fileUri)
-                context.contentResolver.delete(uri, null, null)
+                record.fileUri?.let { uriString ->
+                    context.contentResolver.delete(Uri.parse(uriString), null, null)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

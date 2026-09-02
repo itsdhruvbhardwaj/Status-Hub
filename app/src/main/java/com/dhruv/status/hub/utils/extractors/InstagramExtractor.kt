@@ -60,6 +60,13 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
                 if (!videoUrl.isNullOrBlank()) {
                     val decodedVideoUrl = decodeUrl(videoUrl)
                     if (!decodedVideoUrl.contains("instagram.com/static/")) {
+                        val format = NetworkDownloadUtils.MediaFormat(
+                            id = "insta_video",
+                            url = decodedVideoUrl,
+                            quality = "Standard Quality",
+                            extension = "mp4",
+                            format = "MP4"
+                        )
                         return NetworkDownloadUtils.MediaInfo(
                             url = decodedVideoUrl,
                             fileName = "Instagram_Video_${System.currentTimeMillis()}.mp4",
@@ -69,7 +76,8 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
                             mediaType = "video",
                             platform = "Instagram",
                             thumbnailUrl = decodedThumbnail,
-                            audioUrl = decodedVideoUrl
+                            audioUrl = decodedVideoUrl,
+                            formats = listOf(format)
                         )
                     }
                 }

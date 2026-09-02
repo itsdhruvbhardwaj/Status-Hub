@@ -49,7 +49,21 @@ object NetworkDownloadUtils {
         val mediaType: String, // "video", "audio", "image"
         val platform: String = "direct",
         val thumbnailUrl: String? = null,
-        val audioUrl: String? = null
+        val audioUrl: String? = null,
+        val formats: List<MediaFormat> = emptyList()
+    )
+
+    data class MediaFormat(
+        val id: String,
+        val url: String,
+        val quality: String, // e.g., "1080p", "720p", "128kbps"
+        val extension: String,
+        val format: String, // e.g., "MP4", "MP3"
+        val size: Long = -1L,
+        val isAudio: Boolean = false,
+        val hasVideo: Boolean = true,
+        val hasAudio: Boolean = true,
+        val note: String? = null
     )
 
     /**
@@ -91,24 +105,34 @@ object NetworkDownloadUtils {
     suspend fun downloadMedia(
         context: Context,
         info: MediaInfo,
+        selectedFormat: MediaFormat? = null,
         forceDownload: Boolean = false,
         isAudioOnly: Boolean = false,
         onStateChange: (DownloadState) -> Unit
     ) {
         try {
-            // Handle Audio Extraction if requested from a Video source
-            if (isAudioOnly && info.mediaType == "video" && info.audioUrl == null) {
-                downloadAndExtractAudio(context, info, forceDownload, onStateChange)
-                return
-            }
-
-            val downloadUrl = if (isAudioOnly && info.audioUrl != null) info.audioUrl else info.url
-            val mimeType = if (isAudioOnly) "audio/mpeg" else info.contentType
-            val extension = if (isAudioOnly) "mp3" else info.extension
+            // Use selected format if provided, otherwise fallback to defaults
+            val downloadUrl = selectedFormat?.url ?: (if (isAudioOnly && info.audioUrl != null) info.audioUrl else info.url)
+            val extension = selectedFormat?.extension ?: (if (isAudioOnly) "mp3" else info.extension)
+            val mimeType = if (isAudioOnly) "audio/mpeg" else (selectedFormat?.let { getMimeTypeFromExtension(it.extension) } ?: info.contentType)
+            
             val fileName = if (isAudioOnly) {
                 val base = info.fileName.substringBeforeLast(".")
                 "$base.mp3"
-            } else info.fileName
+            } else {
+                if (selectedFormat != null) {
+                    val base = info.fileName.substringBeforeLast(".")
+                    "$base.${selectedFormat.extension}"
+                } else {
+                    info.fileName
+                }
+            }
+
+            // Handle Audio Extraction if requested from a Video source and no direct audio URL
+            if (isAudioOnly && info.mediaType == "video" && info.audioUrl == null && selectedFormat == null) {
+                downloadAndExtractAudio(context, info, forceDownload, onStateChange)
+                return
+            }
 
             // Duplicate check
             if (!forceDownload) {
@@ -132,11 +156,25 @@ object NetworkDownloadUtils {
 
                 val body = response.body ?: throw Exception("Empty response from server")
                 val inputStream = body.byteStream()
+                val totalBytes = if (selectedFormat != null && selectedFormat.size > 0) selectedFormat.size else (body.contentLength().takeIf { it > 0 } ?: info.contentLength)
                 
-                saveToMediaStore(context, inputStream, fileName, mimeType, info.contentLength, onStateChange)
+                saveToMediaStore(context, inputStream, fileName, mimeType, totalBytes, onStateChange)
             }
         } catch (e: Exception) {
             onStateChange(DownloadState.Error(e.localizedMessage ?: "An error occurred during download."))
+        }
+    }
+
+    private fun getMimeTypeFromExtension(extension: String): String {
+        return when (extension.lowercase()) {
+            "mp4" -> "video/mp4"
+            "webm" -> "video/webm"
+            "mp3" -> "audio/mpeg"
+            "m4a" -> "audio/mp4"
+            "ogg" -> "audio/ogg"
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            else -> "application/octet-stream"
         }
     }
 

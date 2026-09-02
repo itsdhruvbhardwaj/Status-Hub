@@ -5,7 +5,10 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [DownloadRecord::class], version = 1, exportSchema = false)
+/**
+ * Version 3: Added bitrate field to DownloadRecord.
+ */
+@Database(entities = [DownloadRecord::class], version = 3, exportSchema = false)
 abstract class DownloadDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
 
@@ -19,7 +22,9 @@ abstract class DownloadDatabase : RoomDatabase() {
                     context.applicationContext,
                     DownloadDatabase::class.java,
                     "status_hub_database"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }

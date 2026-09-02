@@ -1,5 +1,6 @@
 package com.dhruv.status.hub.ui.components
 
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -23,7 +24,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.dhruv.status.hub.R
-import com.dhruv.status.hub.utils.downloadMedia
+import com.dhruv.status.hub.utils.AdsManager
+import com.dhruv.status.hub.utils.FileUtils.downloadMedia
 import com.dhruv.status.hub.utils.findActivity
 
 /**
@@ -35,7 +37,6 @@ import com.dhruv.status.hub.utils.findActivity
  * @param selectedMedia The URI of the media item that should be shown first.
  * @param mediaList The full list of media URIs to swipe through.
  * @param onClose Callback to exit the previewer.
- * @param adManager Manager to handle showing ads before downloading.
  * @param showDownloadButton Whether to display the download action button.
  */
 @Composable
@@ -43,10 +44,11 @@ fun MediaPreviewer(
     selectedMedia: Uri,
     mediaList: List<Uri>,
     onClose: () -> Unit,
-    adManager: InterstitialAdManager,
     showDownloadButton: Boolean = true
 ) {
     val context = LocalContext.current
+    val activity = context as? Activity ?: context.findActivity()
+
     // Find the starting index based on the selected media URI
     val currentIndex = mediaList.indexOf(selectedMedia).coerceAtLeast(0)
     // State for the horizontal pager
@@ -85,9 +87,8 @@ fun MediaPreviewer(
                             .clip(RoundedCornerShape(50))
                             .background(Color.Black.copy(alpha = 0.7f))
                             .clickable {
-                                val activity = context.findActivity()
-                                // Show ad first, then download the media
-                                adManager.showAd(activity) {
+                                // Use centralized AdsManager to handle interstitial logic before download
+                                AdsManager.handleDownloadAction(activity) {
                                     downloadMedia(context, itemUri)
                                 }
                             },
