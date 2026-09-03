@@ -42,7 +42,7 @@ private const val TAG = "DownloadLinkScreen"
 
 /**
  * Screen for analyzing and downloading media from a direct link.
- * Shows active downloads at the top and recent history at the bottom for better UX.
+ * Maintained with Paste/Analyze at the top, followed by active downloads and history.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,29 +128,7 @@ fun DownloadFromLinkScreen(
                 contentPadding = PaddingValues(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Section: Current Downloads
-                if (activeDownloads.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Active Downloads",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                        )
-                    }
-                    items(activeDownloads, key = { "active_${it.id}" }) { record ->
-                        ActiveDownloadItem(
-                            record = record,
-                            speed = speeds[record.id] ?: 0L,
-                            onPause = { viewModel.pauseDownload(context, record.id) },
-                            onResume = { viewModel.resumeDownload(context, record.id) },
-                            onCancel = { viewModel.cancelDownload(context, record.id) }
-                        )
-                    }
-                    item { Spacer(modifier = Modifier.height(24.dp)) }
-                }
-
-                // Section: URL Input
+                // Section 1: URL Input (MUST ALWAYS BE AT TOP)
                 item {
                     OutlinedTextField(
                         value = url,
@@ -188,11 +166,6 @@ fun DownloadFromLinkScreen(
                                     val item = clipboard.primaryClip?.getItemAt(0)
                                     val clipText = item?.text?.toString() ?: ""
                                     val cleanedUrl = clipText.trim()
-                                    
-                                    Log.d(TAG, "Clipboard text: $clipText")
-                                    Log.d(TAG, "Pasted URL: $cleanedUrl")
-                                    Log.d(TAG, "URL length: ${cleanedUrl.length}")
-                                    
                                     url = cleanedUrl
                                 }
                             },
@@ -211,7 +184,6 @@ fun DownloadFromLinkScreen(
                         Button(
                             onClick = {
                                 if (url.isNotBlank()) {
-                                    Log.d(TAG, "Analyze URL: $url")
                                     viewModel.analyzeUrl(url)
                                 }
                             },
@@ -228,7 +200,7 @@ fun DownloadFromLinkScreen(
                     Spacer(modifier = Modifier.height(28.dp))
                 }
 
-                // Section: Analysis Result
+                // Section 2: Analysis Result
                 item {
                     AnimatedContent(
                         targetState = downloadState, 
@@ -252,7 +224,6 @@ fun DownloadFromLinkScreen(
                                 MediaInfoCard(
                                     info = state.info,
                                     onDownloadClick = { format, _ ->
-                                        // Trigger interstitial on both audio and video
                                         val activity = context.findActivity()
                                         AdsManager.handleDownloadAction(activity) {
                                             viewModel.enqueueDownload(context, state.info, format)
@@ -260,6 +231,7 @@ fun DownloadFromLinkScreen(
                                         }
                                     }
                                 )
+                                Spacer(modifier = Modifier.height(28.dp))
                             }
 
                             is NetworkDownloadUtils.DownloadState.Error -> {
@@ -269,6 +241,7 @@ fun DownloadFromLinkScreen(
                                     Button(onClick = { viewModel.resetState() }) {
                                         Text("Try Again")
                                     }
+                                    Spacer(modifier = Modifier.height(28.dp))
                                 }
                             }
                             
@@ -277,10 +250,31 @@ fun DownloadFromLinkScreen(
                     }
                 }
 
-                // Section: Recently Completed
+                // Section 3: Active Downloads (Now below analysis/input)
+                if (activeDownloads.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Active Downloads",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        )
+                    }
+                    items(activeDownloads, key = { "active_${it.id}" }) { record ->
+                        ActiveDownloadItem(
+                            record = record,
+                            speed = speeds[record.id] ?: 0L,
+                            onPause = { viewModel.pauseDownload(context, record.id) },
+                            onResume = { viewModel.resumeDownload(context, record.id) },
+                            onCancel = { viewModel.cancelDownload(context, record.id) }
+                        )
+                    }
+                    item { Spacer(modifier = Modifier.height(24.dp)) }
+                }
+
+                // Section 4: Recently Completed
                 if (recentCompleted.isNotEmpty()) {
                     item {
-                        Spacer(modifier = Modifier.height(32.dp))
                         Text(
                             text = "Recently Completed",
                             style = MaterialTheme.typography.titleMedium,
@@ -299,7 +293,6 @@ fun DownloadFromLinkScreen(
                 }
             }
             
-            // AdBanner with bottom padding matching Home Screen
             Box(modifier = Modifier.padding(bottom = 12.dp)) {
                 AdBanner()
             }
@@ -311,15 +304,12 @@ private fun openFile(context: Context, uriString: String) {
     try {
         val uri = uriString.toUri()
         val mimeType = context.contentResolver.getType(uri)
-        Log.d(TAG, "Opening file: $uri, MIME: $mimeType")
-        
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(intent)
     } catch (e: Exception) {
-        Log.e(TAG, "Failed to open file", e)
         Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show()
     }
 }

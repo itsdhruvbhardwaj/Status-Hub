@@ -178,14 +178,29 @@ object DownloadManager {
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
                 .header("Accept-Encoding", "identity")
 
-            if (existingBytes > 0) {
+            if (existingBytes > 0 || record.mediaType == "audio") {
                 requestBuilder.header("Range", "bytes=$existingBytes-")
             }
 
             val request = requestBuilder.build()
             
+            Log.d(TAG, "--- DOWNLOAD REQUEST START ---")
+            Log.d(TAG, "ID: $id, Existing Bytes: $existingBytes")
+            Log.d(TAG, "URL: ${request.url}")
+            request.headers.forEach { (name, value) ->
+                Log.d(TAG, "Req Header: $name: $value")
+            }
+            
             try {
                 client.newCall(request).execute().use { response ->
+                    Log.d(TAG, "Response Code: ${response.code}")
+                    Log.d(TAG, "Protocol: ${response.protocol}")
+                    response.headers.forEach { (name, value) ->
+                        Log.d(TAG, "Res Header: $name: $value")
+                    }
+                    Log.d(TAG, "Body Content-Length: ${response.body?.contentLength()}")
+                    Log.d(TAG, "--- DOWNLOAD REQUEST END ---")
+
                     if (!response.isSuccessful && response.code != 206) {
                         if (response.code == 416) {
                             tempFile.delete()
@@ -245,6 +260,7 @@ object DownloadManager {
                     if (finalUri != null) {
                         db.downloadDao().updateRecord(record.copy(
                             status = "COMPLETED",
+                            totalBytes = totalBytes,
                             downloadedBytes = totalBytes,
                             fileUri = finalUri.toString(),
                             errorMessage = null,
