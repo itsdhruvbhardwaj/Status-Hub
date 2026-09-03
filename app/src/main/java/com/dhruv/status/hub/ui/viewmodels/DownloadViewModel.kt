@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel for managing the Download from Link feature and History.
+ * Restored to original simple download flow.
  */
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -43,8 +44,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Enqueues a download. 
-     * Requirement: Do not force .mp3 extension if the source is not genuinely MP3.
+     * Enqueues a download using the native format extracted from the source.
      */
     fun enqueueDownload(
         context: Context,
@@ -52,32 +52,22 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         format: NetworkDownloadUtils.MediaFormat?,
         isAudioOnly: Boolean = false
     ) {
-        // Use the actual extension from the selected format to avoid fake .mp3 files
-        val actualExtension = format?.extension ?: info.extension
-        val finalMediaType = if (isAudioOnly || format?.isAudio == true) "audio" else info.mediaType
-        
+        val extension = format?.extension ?: info.extension
+        val mediaType = if (isAudioOnly || format?.isAudio == true) "audio" else info.mediaType
+
         val record = DownloadRecord(
             sourceUrl = info.url,
-            fileName = if (format != null) {
-                val base = info.fileName.substringBeforeLast(".")
-                "$base.${format.extension}"
-            } else {
-                val base = info.fileName.substringBeforeLast(".")
-                "$base.$actualExtension"
-            },
-            mediaType = finalMediaType,
-            format = actualExtension, // Store the actual codec extension
+            fileName = info.fileName,
+            mediaType = mediaType,
+            format = extension,
             quality = format?.quality ?: "Default",
-            bitrate = if (isAudioOnly && format != null) {
-                format.quality.filter { it.isDigit() }.toIntOrNull()
-            } else null,
             platform = info.platform,
             status = "QUEUED",
             thumbnailUrl = info.thumbnailUrl,
             downloadUrl = format?.url ?: info.url,
             totalBytes = format?.size ?: -1L
         )
-        
+
         DownloadManager.enqueue(context, record)
         resetState()
     }

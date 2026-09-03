@@ -11,14 +11,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
+import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
  * Central manager for all downloads in Status Hub.
- * Handles queuing, concurrency (max 3), persistence, and range-based resume.
- * Updated to fix initial download speed and improve speed calculation with rolling average.
+ * Restored to original working flow: Direct download and MediaStore saving.
  */
 object DownloadManager {
     private const val TAG = "DownloadManager"
@@ -27,21 +28,17 @@ object DownloadManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<Long, Job>()
     
-    // Observable map for real-time speed updates
     private val _downloadSpeeds = MutableStateFlow<Map<Long, Long>>(emptyMap())
     val downloadSpeeds = _downloadSpeeds.asStateFlow()
 
     private val client = OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * Recovery logic: Reset stuck "DOWNLOADING" records to "QUEUED" on startup.
-     */
     fun init(context: Context) {
         scope.launch {
             val db = DownloadDatabase.getDatabase(context)
@@ -141,15 +138,20 @@ object DownloadManager {
 
         val job = scope.launch {
             val db = DownloadDatabase.getDatabase(context)
-            db.downloadDao().updateRecord(record.copy(status = "DOWNLOADING"))
+            db.downloadDao().updateRecord(record.copy(status = "DOWNLOADING", errorMessage = null))
             
             try {
                 performDownload(context, record.id)
-            } catch (_: CancellationException) {
-                // Handled
+            } catch (e: CancellationException) {
+                Log.d(TAG, "Download ${record.id} paused/cancelled")
             } catch (e: Exception) {
                 Log.e(TAG, "Download ${record.id} failed", e)
-                db.downloadDao().updateRecord(record.copy(status = "FAILED", errorMessage = e.message))
+                val errorMsg = when (e) {
+                    is SocketTimeoutException -> "Request timed out. Please try again."
+                    is IOException -> "Network error: ${e.message}"
+                    else -> e.message ?: "Download failed"
+                }
+                db.downloadDao().updateRecord(record.copy(status = "FAILED", errorMessage = errorMsg))
             } finally {
                 activeJobs.remove(record.id)
                 updateSpeed(record.id, 0L)
@@ -159,133 +161,111 @@ object DownloadManager {
         activeJobs[record.id] = job
     }
 
-    private suspend fun performDownload(context: Context, id: Long): Unit {
-        var shouldRetry = true
-        while (shouldRetry) {
-            shouldRetry = false
-            withContext(Dispatchers.IO) {
-                val db = DownloadDatabase.getDatabase(context)
-                val record = db.downloadDao().getRecordById(id) ?: return@withContext
-                val downloadUrl = record.downloadUrl ?: throw Exception("Missing download URL")
-                
-                val tempFile = File(context.cacheDir, "temp_${record.id}_${record.fileName}")
-                val existingBytes = if (tempFile.exists()) tempFile.length() else 0L
+    private suspend fun performDownload(context: Context, id: Long): Unit = withContext(Dispatchers.IO) {
+        var retryCount = 0
+        var completed = false
+        
+        while (!completed && retryCount < 3) {
+            val db = DownloadDatabase.getDatabase(context)
+            val record = db.downloadDao().getRecordById(id) ?: return@withContext
+            val downloadUrl = record.downloadUrl ?: throw Exception("Missing download URL")
+            
+            val tempFile = File(context.cacheDir, "temp_${record.id}_${record.fileName}")
+            val existingBytes = if (tempFile.exists()) tempFile.length() else 0L
 
-                // DEBUG LOGGING: START/RESUME
-                Log.d(TAG, "DOWNLOAD_EVENT: ${if (existingBytes == 0L) "START" else "RESUME"} ID=$id")
-                Log.d(TAG, "Download URL: $downloadUrl")
-                Log.d(TAG, "Existing Bytes: $existingBytes")
+            val requestBuilder = Request.Builder()
+                .url(downloadUrl)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
+                .header("Accept-Encoding", "identity")
 
-                val requestBuilder = Request.Builder()
-                    .url(downloadUrl)
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
-                    // Requirement: Use Range header for ALL requests to ensure consistent high speed
-                    .header("Range", "bytes=$existingBytes-")
-                    .header("Accept-Encoding", "identity") // Prevent gzip which messes with Content-Length and speed calc
+            if (existingBytes > 0) {
+                requestBuilder.header("Range", "bytes=$existingBytes-")
+            }
 
-                val request = requestBuilder.build()
-                Log.d(TAG, "Request Headers: ${request.headers}")
-
+            val request = requestBuilder.build()
+            
+            try {
                 client.newCall(request).execute().use { response ->
-                    // DEBUG LOGGING: RESPONSE
-                    Log.d(TAG, "HTTP Status: ${response.code}")
-                    Log.d(TAG, "Response Headers: ${response.headers}")
-
                     if (!response.isSuccessful && response.code != 206) {
-                        Log.e(TAG, "Download failed with code ${response.code}")
                         if (response.code == 416) {
-                            Log.w(TAG, "Requested range not satisfiable (416). Deleting temp file and retrying.")
                             tempFile.delete()
-                            shouldRetry = true
+                            retryCount++
                             return@use
                         }
-                        throw Exception("HTTP ${response.code}: ${response.message}")
+                        throw Exception("Server error HTTP ${response.code}")
                     }
 
                     val body = response.body ?: throw Exception("Empty response body")
                     val totalBytes = if (response.code == 206) {
                         val rangeHeader = response.header("Content-Range")
-                        Log.d(TAG, "Content-Range: $rangeHeader")
                         rangeHeader?.substringAfterLast("/")?.toLongOrNull() ?: (existingBytes + body.contentLength())
                     } else {
                         body.contentLength()
                     }
-                    Log.d(TAG, "Content-Length: ${body.contentLength()}, Total Bytes: $totalBytes")
-
-                    db.downloadDao().updateRecord(record.copy(totalBytes = totalBytes, downloadedBytes = existingBytes))
-
-                    val inputStream = body.byteStream()
-                    val randomAccessFile = RandomAccessFile(tempFile, "rw")
-                    randomAccessFile.seek(existingBytes)
-
-                    val buffer = ByteArray(65536)
-                    var bytesRead: Int
-                    val startTime = System.currentTimeMillis()
-                    var lastUpdate = startTime
-                    var downloadedSinceLastUpdate = 0L
-                    var currentDownloaded = existingBytes
                     
-                    // Rolling average (5 seconds)
-                    val speedWindow = LongArray(5)
-                    var windowIndex = 0
+                    db.downloadDao().updateRecord(record.copy(totalBytes = totalBytes, downloadedBytes = if (response.code == 206) existingBytes else 0L))
 
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        yield()
-                        randomAccessFile.write(buffer, 0, bytesRead)
-                        currentDownloaded += bytesRead
-                        downloadedSinceLastUpdate += bytesRead
-
-                        val now = System.currentTimeMillis()
-                        if (now - lastUpdate >= 1000) {
-                            val timeDiff = now - lastUpdate
-                            val currentSpeed = (downloadedSinceLastUpdate * 1000) / timeDiff // bytes/sec
-                            
-                            // Update rolling average
-                            speedWindow[windowIndex] = currentSpeed
-                            windowIndex = (windowIndex + 1) % speedWindow.size
-                            val avgSpeed = speedWindow.filter { it > 0 }.average().toLong()
-                            
-                            val totalTimeElapsed = now - startTime
-                            val totalDownloadedInThisSession = currentDownloaded - existingBytes
-                            val sessionAvgSpeed = if (totalTimeElapsed > 0) (totalDownloadedInThisSession * 1000) / totalTimeElapsed else 0L
-
-                            // Log metrics as requested
-                            Log.d(TAG, "Progress ID=$id: ${currentDownloaded}/${totalBytes} bytes | " +
-                                  "Current: ${formatSpeed(currentSpeed)} | Rolling Avg: ${formatSpeed(avgSpeed)} | " +
-                                  "Session Avg: ${formatSpeed(sessionAvgSpeed)}")
-
-                            updateSpeed(id, avgSpeed)
-                            db.downloadDao().updateProgress(id, currentDownloaded)
-                            
-                            lastUpdate = now
-                            downloadedSinceLastUpdate = 0
+                    val randomAccessFile = RandomAccessFile(tempFile, "rw")
+                    try {
+                        if (response.code == 206) {
+                            randomAccessFile.seek(existingBytes)
+                        } else {
+                            randomAccessFile.setLength(0)
+                            randomAccessFile.seek(0)
                         }
-                    }
-                    randomAccessFile.close()
 
+                        val inputStream = body.byteStream()
+                        val buffer = ByteArray(65536)
+                        var bytesRead: Int
+                        var lastUpdate = System.currentTimeMillis()
+                        var downloadedInInterval = 0L
+                        var currentDownloaded = if (response.code == 206) existingBytes else 0L
+
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            yield()
+                            randomAccessFile.write(buffer, 0, bytesRead)
+                            currentDownloaded += bytesRead
+                            downloadedInInterval += bytesRead
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastUpdate >= 1000) {
+                                updateSpeed(id, (downloadedInInterval * 1000) / (now - lastUpdate))
+                                db.downloadDao().updateProgress(id, currentDownloaded)
+                                lastUpdate = now
+                                downloadedInInterval = 0
+                            }
+                        }
+                    } finally {
+                        randomAccessFile.close()
+                    }
+
+                    // Save the native file directly
                     val finalUri = FileUtils.saveTempFileToMediaStore(context, tempFile, record.fileName, record.mediaType)
+                    
                     if (finalUri != null) {
-                        Log.d(TAG, "Download completed successfully: $id")
                         db.downloadDao().updateRecord(record.copy(
                             status = "COMPLETED",
                             downloadedBytes = totalBytes,
                             fileUri = finalUri.toString(),
+                            errorMessage = null,
                             timestamp = System.currentTimeMillis()
                         ))
                         tempFile.delete()
+                        completed = true
+                        Log.d(TAG, "Download SUCCESS for ID=$id")
                     } else {
-                        throw Exception("Failed to save to gallery")
+                        throw Exception("Failed to save media to system gallery.")
                     }
                 }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                retryCount++
+                if (retryCount < 3 && (e is SocketTimeoutException || e is IOException)) {
+                    delay(2000L * retryCount)
+                } else {
+                    throw e
+                }
             }
-        }
-    }
-    
-    private fun formatSpeed(bytesPerSecond: Long): String {
-        return if (bytesPerSecond < 1024 * 1024) {
-            "${bytesPerSecond / 1024} KB/s"
-        } else {
-            String.format("%.2f MB/s", bytesPerSecond.toDouble() / (1024 * 1024))
         }
     }
 }

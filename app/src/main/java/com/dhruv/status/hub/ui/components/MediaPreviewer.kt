@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.dhruv.status.hub.R
 import com.dhruv.status.hub.utils.AdsManager
-import com.dhruv.status.hub.utils.FileUtils.downloadMedia
+import com.dhruv.status.hub.utils.FileUtils
 import com.dhruv.status.hub.utils.findActivity
 
 /**
@@ -89,7 +89,7 @@ fun MediaPreviewer(
                             .clickable {
                                 // Use centralized AdsManager to handle interstitial logic before download
                                 AdsManager.handleDownloadAction(activity) {
-                                    downloadMedia(context, itemUri)
+                                    FileUtils.downloadMedia(context, itemUri)
                                 }
                             },
                         contentAlignment = Alignment.Center

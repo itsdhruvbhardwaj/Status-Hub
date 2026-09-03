@@ -15,7 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,8 +25,7 @@ import com.dhruv.status.hub.utils.NetworkDownloadUtils
 
 /**
  * Enhanced MediaInfoCard with format selection.
- * Fixed to use actual source extension even when labeled as MP3 in UI,
- * to prevent renaming video containers to .mp3 until conversion is implemented.
+ * Restored: No bitrate selector for audio. Displays native streams.
  */
 @Composable
 fun MediaInfoCard(
@@ -35,39 +33,14 @@ fun MediaInfoCard(
     onDownloadClick: (format: NetworkDownloadUtils.MediaFormat?, isAudioOnly: Boolean) -> Unit
 ) {
     val videoFormats = remember(info) { info.formats.filter { !it.isAudio } }
-    
-    // Requirement: Show ONLY MP3 bitrates (96, 128, 192, 256, 320 kbps)
-    val audioBitrates = listOf(96, 128, 192, 256, 320)
-    val audioFormats = remember(info) {
-        // Find the best source audio stream
-        val bestAudioStream = info.formats.filter { it.isAudio }.maxByOrNull { 
-            it.quality.filter { c -> c.isDigit() }.toIntOrNull() ?: 128 
-        }
-        
-        audioBitrates.map { bitrate ->
-            NetworkDownloadUtils.MediaFormat(
-                id = "mp3_$bitrate",
-                url = bestAudioStream?.url ?: info.url,
-                quality = "$bitrate kbps",
-                // IMPORTANT: Use the actual source extension (e.g. m4a, webm) 
-                // to avoid creating fake .mp3 files that are actually video containers.
-                extension = bestAudioStream?.extension ?: "m4a",
-                format = "MP3", // Label in UI
-                size = -1L,
-                isAudio = true,
-                hasVideo = false,
-                hasAudio = true,
-                note = "Source: ${bestAudioStream?.extension?.uppercase() ?: "M4A"}"
-            )
-        }
-    }
+    val audioFormats = remember(info) { info.formats.filter { it.isAudio } }
 
     var selectedTab by remember(info) { 
         mutableIntStateOf(if (videoFormats.isNotEmpty()) 0 else 1) 
     }
     
     var selectedFormat by remember(info, selectedTab) { 
-        mutableStateOf(if (selectedTab == 0) videoFormats.firstOrNull() else audioFormats.getOrNull(1)) // Default 128kbps
+        mutableStateOf(if (selectedTab == 0) videoFormats.firstOrNull() else audioFormats.firstOrNull())
     }
 
     Card(
@@ -80,7 +53,6 @@ fun MediaInfoCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header Section
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically

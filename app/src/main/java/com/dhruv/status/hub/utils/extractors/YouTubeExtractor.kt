@@ -15,13 +15,14 @@ import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
-import org.schabi.newpipe.extractor.stream.VideoStream
 
 /**
- * Robust YouTube Extractor that uses NewPipeExtractor library.
- * Updated to prefer M4A for audio compatibility with Android MediaStore.
+ * YouTube extractor using NewPipeExtractor.
+ * Restored to original working flow: Native stream extraction without transcoding.
  */
-class YouTubeExtractor(private val okHttpClient: OkHttpClient) : MediaExtractor {
+class YouTubeExtractor(
+    private val okHttpClient: OkHttpClient
+) : MediaExtractor {
 
     private val tag = "YouTubeExtractor"
 
@@ -36,21 +37,36 @@ class YouTubeExtractor(private val okHttpClient: OkHttpClient) : MediaExtractor 
 
     private fun initializeNewPipe() {
         if (isInitialized) return
+
         synchronized(YouTubeExtractor::class.java) {
             if (isInitialized) return
+
             try {
                 val downloader = object : Downloader() {
-                    override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): Response {
+
+                    override fun execute(
+                        request: org.schabi.newpipe.extractor.downloader.Request
+                    ): Response {
+
                         val method = request.httpMethod()
                         val url = request.url()
                         val headers = request.headers()
                         val data = request.dataToSend()
 
-                        val mediaType = headers["Content-Type"]?.firstOrNull()?.toMediaTypeOrNull()
+                        val mediaType =
+                            headers["Content-Type"]
+                                ?.firstOrNull()
+                                ?.toMediaTypeOrNull()
+
                         val requestBody = when {
-                            data != null -> data.toRequestBody(mediaType)
-                            method == "POST" || method == "PUT" -> "".toByteArray().toRequestBody(mediaType)
-                            else -> null
+                            data != null ->
+                                data.toRequestBody(mediaType)
+
+                            method == "POST" || method == "PUT" ->
+                                "".toByteArray().toRequestBody(mediaType)
+
+                            else ->
+                                null
                         }
 
                         val builder = Request.Builder()
@@ -63,123 +79,367 @@ class YouTubeExtractor(private val okHttpClient: OkHttpClient) : MediaExtractor 
                             }
                         }
 
-                        if (headers.none { it.key.equals("User-Agent", ignoreCase = true) }) {
-                            builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
-                        }
-
-                        val okHttpRequest = builder.build()
-                        okHttpClient.newCall(okHttpRequest).execute().use { okResponse ->
-                            val bodyString = okResponse.body?.string()
-                            return Response(
-                                okResponse.code,
-                                okResponse.message,
-                                okResponse.headers.toMultimap(),
-                                bodyString,
-                                okResponse.request.url.toString()
+                        if (
+                            headers.none {
+                                it.key.equals(
+                                    "User-Agent",
+                                    ignoreCase = true
+                                )
+                            }
+                        ) {
+                            builder.header(
+                                "User-Agent",
+                                "Mozilla/5.0 (Linux; Android 10; K) " +
+                                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                        "Chrome/131.0.0.0 Mobile Safari/537.36"
                             )
                         }
+
+                        okHttpClient
+                            .newCall(builder.build())
+                            .execute()
+                            .use { okResponse ->
+
+                                val bodyString =
+                                    okResponse.body?.string()
+
+                                return Response(
+                                    okResponse.code,
+                                    okResponse.message,
+                                    okResponse.headers.toMultimap(),
+                                    bodyString,
+                                    okResponse.request.url.toString()
+                                )
+                            }
                     }
                 }
 
-                NewPipe.init(downloader, Localization.DEFAULT)
+                NewPipe.init(
+                    downloader,
+                    Localization.DEFAULT
+                )
+
                 isInitialized = true
-                Log.d(tag, "NewPipeExtractor initialized successfully")
+
+                Log.d(
+                    tag,
+                    "NewPipeExtractor initialized successfully"
+                )
+
             } catch (e: Exception) {
-                Log.e(tag, "Failed to initialize NewPipeExtractor: ${e.message}")
+
+                Log.e(
+                    tag,
+                    "Failed to initialize NewPipeExtractor",
+                    e
+                )
             }
         }
     }
 
     override fun canHandle(url: String): Boolean {
         val lower = url.lowercase()
-        return lower.contains("youtube.com") || lower.contains("youtu.be")
+
+        return lower.contains("youtube.com") ||
+                lower.contains("youtu.be")
     }
 
-    override suspend fun extract(url: String): NetworkDownloadUtils.MediaInfo? = withContext(Dispatchers.IO) {
-        if (!isInitialized) {
-            initializeNewPipe()
-        }
-        
-        try {
-            Log.d(tag, "Starting extraction for: $url")
-            val service = ServiceList.YouTube
-            val normalizedUrl = if (url.contains("/shorts/")) {
-                url.replace("/shorts/", "/watch?v=")
-            } else url
+    override suspend fun extract(
+        url: String
+    ): NetworkDownloadUtils.MediaInfo? =
+        withContext(Dispatchers.IO) {
 
-            val streamInfo = StreamInfo.getInfo(service, normalizedUrl)
-            val streamName = streamInfo.name ?: "YouTube_Video"
-            val sanitizedName = streamName.replace(Regex("[^a-zA-Z0-9]"), "_")
-            
-            val formats = mutableListOf<NetworkDownloadUtils.MediaFormat>()
-
-            // 1. Add Video + Audio (Muxed) streams
-            streamInfo.videoStreams
-                .filter { vs -> vs.itag == 18 || vs.itag == 22 }
-                .take(3)
-                .forEach { vs ->
-                    formats.add(
-                        NetworkDownloadUtils.MediaFormat(
-                            id = "v_${vs.itag}_${vs.format?.suffix}",
-                            url = vs.url ?: "",
-                            quality = vs.resolution ?: "Unknown",
-                            extension = vs.format?.suffix ?: "mp4",
-                            format = vs.format?.name ?: "MP4",
-                            size = -1L,
-                            isAudio = false,
-                            hasVideo = true,
-                            hasAudio = true,
-                            note = "Direct"
-                        )
-                    )
-                }
-
-            // 2. Add Audio-only streams - Prefer M4A for compatibility
-            streamInfo.audioStreams
-                .sortedWith(compareByDescending<AudioStream> { it.bitrate }
-                    .thenByDescending { it.format?.suffix == "m4a" })
-                .distinctBy { it.bitrate / 1000 }
-                .take(2) 
-                .forEach { as_ ->
-                    val bitrateKbps = if (as_.bitrate > 0) as_.bitrate / 1000 else 128
-                    val ext = as_.format?.suffix ?: "m4a"
-                    
-                    formats.add(
-                        NetworkDownloadUtils.MediaFormat(
-                            id = "a_${as_.itag}_${as_.bitrate}_$ext",
-                            url = as_.url ?: "",
-                            quality = "${bitrateKbps} kbps",
-                            extension = ext,
-                            format = if (ext == "m4a") "M4A" else "WEBM",
-                            size = -1L,
-                            isAudio = true,
-                            hasVideo = false,
-                            hasAudio = true,
-                            note = if (ext == "m4a") "MPEG-4 Audio" else "Opus Audio"
-                        )
-                    )
-                }
-
-            if (formats.isNotEmpty()) {
-                val bestFormat = formats.firstOrNull { !it.isAudio } ?: formats.firstOrNull()
-
-                return@withContext NetworkDownloadUtils.MediaInfo(
-                    url = bestFormat?.url ?: "",
-                    fileName = "$sanitizedName.${bestFormat?.extension ?: "mp4"}",
-                    contentType = if (bestFormat?.extension == "webm") "video/webm" else if (bestFormat?.isAudio == true) "audio/mp4" else "video/mp4",
-                    contentLength = -1L,
-                    extension = bestFormat?.extension ?: "mp4",
-                    mediaType = if (bestFormat?.isAudio == true) "audio" else "video",
-                    platform = "YouTube",
-                    thumbnailUrl = if (streamInfo.thumbnails.isNotEmpty()) streamInfo.thumbnails[0].url else null,
-                    audioUrl = streamInfo.audioStreams.maxByOrNull { it.bitrate }?.url,
-                    formats = formats
-                )
+            if (!isInitialized) {
+                initializeNewPipe()
             }
-            null
-        } catch (e: Exception) {
-            Log.e(tag, "Extraction failed for $url: ${e.message}", e)
-            null
+
+            try {
+
+                Log.d(
+                    tag,
+                    "Starting extraction for: $url"
+                )
+
+                val normalizedUrl =
+                    if (url.contains("/shorts/")) {
+                        url.replace(
+                            "/shorts/",
+                            "/watch?v="
+                        )
+                    } else {
+                        url
+                    }
+
+                val streamInfo =
+                    StreamInfo.getInfo(
+                        ServiceList.YouTube,
+                        normalizedUrl
+                    )
+
+                val streamName =
+                    streamInfo.name
+                        ?: "YouTube_Video"
+
+                val sanitizedName =
+                    streamName.replace(
+                        Regex("[^a-zA-Z0-9]"),
+                        "_"
+                    )
+
+                val formats =
+                    mutableListOf<NetworkDownloadUtils.MediaFormat>()
+
+                // ---------------------------------------------------------
+                // VIDEO STREAMS
+                // ---------------------------------------------------------
+
+                streamInfo.videoStreams
+                    .filter {
+                        it.itag == 18 || it.itag == 22
+                    }
+                    .take(3)
+                    .forEach { video ->
+
+                        val extension =
+                            video.format?.suffix
+                                ?.lowercase()
+                                ?: "mp4"
+
+                        formats.add(
+                            NetworkDownloadUtils.MediaFormat(
+
+                                id =
+                                    "v_${video.itag}_$extension",
+
+                                url =
+                                    video.url ?: "",
+
+                                quality =
+                                    video.resolution
+                                        ?: "Unknown",
+
+                                extension =
+                                    extension,
+
+                                format =
+                                    video.format?.name
+                                        ?: "MP4",
+
+                                size =
+                                    -1L,
+
+                                isAudio =
+                                    false,
+
+                                hasVideo =
+                                    true,
+
+                                hasAudio =
+                                    true,
+
+                                note =
+                                    "Direct"
+                            )
+                        )
+                    }
+
+                // ---------------------------------------------------------
+                // AUDIO STREAMS
+                // ---------------------------------------------------------
+
+                streamInfo.audioStreams
+                    .filter {
+                        !it.url.isNullOrBlank()
+                    }
+                    .sortedWith(
+                        compareByDescending<AudioStream> {
+                            it.format?.suffix
+                                ?.equals(
+                                    "m4a",
+                                    ignoreCase = true
+                                )
+                                ?: false
+                        }.thenByDescending {
+                            it.bitrate
+                        }
+                    )
+                    .distinctBy {
+                        "${it.format?.suffix}_${it.bitrate}"
+                    }
+                    .take(3)
+                    .forEach { audio ->
+
+                        val extension =
+                            audio.format?.suffix
+                                ?.lowercase()
+                                ?: "webm"
+
+                        val bitrateKbps =
+                            if (audio.bitrate > 0) {
+                                audio.bitrate / 1000
+                            } else {
+                                128
+                            }
+
+                        val isM4a =
+                            extension == "m4a"
+
+                        formats.add(
+                            NetworkDownloadUtils.MediaFormat(
+
+                                id =
+                                    "a_${audio.itag}_" +
+                                            "${audio.bitrate}_" +
+                                            extension,
+
+                                url =
+                                    audio.url ?: "",
+
+                                quality =
+                                    "$bitrateKbps kbps",
+
+                                extension =
+                                    extension,
+
+                                format =
+                                    if (isM4a) {
+                                        "M4A"
+                                    } else {
+                                        "WEBM"
+                                    },
+
+                                size =
+                                    -1L,
+
+                                isAudio =
+                                    true,
+
+                                hasVideo =
+                                    false,
+
+                                hasAudio =
+                                    true,
+
+                                note =
+                                    if (isM4a) {
+                                        "MPEG-4 Audio"
+                                    } else {
+                                        "Opus Audio"
+                                    }
+                            )
+                        )
+                    }
+
+                if (formats.isEmpty()) {
+
+                    Log.e(
+                        tag,
+                        "No downloadable formats found"
+                    )
+
+                    return@withContext null
+                }
+
+                // ---------------------------------------------------------
+                // DEFAULT FORMAT
+                // ---------------------------------------------------------
+
+                val bestFormat =
+                    formats.firstOrNull {
+                        !it.isAudio && it.hasVideo
+                    } ?: formats.firstOrNull()
+
+                if (bestFormat == null) {
+                    return@withContext null
+                }
+
+                val extension =
+                    bestFormat.extension.lowercase()
+
+                val isAudio =
+                    bestFormat.isAudio
+
+                val contentType =
+                    when {
+
+                        isAudio &&
+                                extension == "webm" ->
+                            "audio/webm"
+
+                        isAudio &&
+                                extension == "m4a" ->
+                            "audio/mp4"
+
+                        !isAudio &&
+                                extension == "webm" ->
+                            "video/webm"
+
+                        !isAudio &&
+                                extension == "mp4" ->
+                            "video/mp4"
+
+                        isAudio ->
+                            "audio/*"
+
+                        else ->
+                            "video/*"
+                    }
+
+                val mediaType =
+                    if (isAudio) {
+                        "audio"
+                    } else {
+                        "video"
+                    }
+
+                NetworkDownloadUtils.MediaInfo(
+
+                    url =
+                        bestFormat.url,
+
+                    fileName =
+                        "$sanitizedName.$extension",
+
+                    contentType =
+                        contentType,
+
+                    contentLength =
+                        -1L,
+
+                    extension =
+                        extension,
+
+                    mediaType =
+                        mediaType,
+
+                    platform =
+                        "YouTube",
+
+                    thumbnailUrl =
+                        streamInfo.thumbnails
+                            .firstOrNull()
+                            ?.url,
+
+                    audioUrl =
+                        streamInfo.audioStreams
+                            .maxByOrNull {
+                                it.bitrate
+                            }
+                            ?.url,
+
+                    formats =
+                        formats
+                )
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    tag,
+                    "Extraction failed for $url",
+                    e
+                )
+
+                null
+            }
         }
-    }
 }

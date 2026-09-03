@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -37,6 +38,8 @@ import com.dhruv.status.hub.utils.DownloadManager
 import com.dhruv.status.hub.utils.NetworkDownloadUtils
 import com.dhruv.status.hub.utils.findActivity
 
+private const val TAG = "DownloadLinkScreen"
+
 /**
  * Screen for analyzing and downloading media from a direct link.
  * Shows active downloads at the top and recent history at the bottom for better UX.
@@ -63,6 +66,7 @@ fun DownloadFromLinkScreen(
     LaunchedEffect(initialUrl) {
         if (!initialUrl.isNullOrBlank()) {
             url = initialUrl
+            Log.d(TAG, "Initial URL received: $initialUrl")
             viewModel.analyzeUrl(initialUrl)
         } else {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -70,7 +74,8 @@ fun DownloadFromLinkScreen(
                 val item = clipboard.primaryClip?.getItemAt(0)
                 val clipText = item?.text?.toString() ?: ""
                 if (clipText.startsWith("http") && url.isEmpty()) {
-                    url = clipText
+                    url = clipText.trim()
+                    Log.d(TAG, "Auto-pasted from clipboard: $url")
                 }
             }
         }
@@ -181,7 +186,14 @@ fun DownloadFromLinkScreen(
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 if (clipboard.hasPrimaryClip()) {
                                     val item = clipboard.primaryClip?.getItemAt(0)
-                                    url = item?.text?.toString() ?: ""
+                                    val clipText = item?.text?.toString() ?: ""
+                                    val cleanedUrl = clipText.trim()
+                                    
+                                    Log.d(TAG, "Clipboard text: $clipText")
+                                    Log.d(TAG, "Pasted URL: $cleanedUrl")
+                                    Log.d(TAG, "URL length: ${cleanedUrl.length}")
+                                    
+                                    url = cleanedUrl
                                 }
                             },
                             modifier = Modifier.weight(1f).height(50.dp),
@@ -199,6 +211,7 @@ fun DownloadFromLinkScreen(
                         Button(
                             onClick = {
                                 if (url.isNotBlank()) {
+                                    Log.d(TAG, "Analyze URL: $url")
                                     viewModel.analyzeUrl(url)
                                 }
                             },
@@ -297,12 +310,16 @@ fun DownloadFromLinkScreen(
 private fun openFile(context: Context, uriString: String) {
     try {
         val uri = uriString.toUri()
+        val mimeType = context.contentResolver.getType(uri)
+        Log.d(TAG, "Opening file: $uri, MIME: $mimeType")
+        
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, context.contentResolver.getType(uri))
+            setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(intent)
     } catch (e: Exception) {
+        Log.e(TAG, "Failed to open file", e)
         Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show()
     }
 }

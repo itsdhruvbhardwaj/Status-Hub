@@ -2,6 +2,7 @@ package com.dhruv.status.hub.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -19,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -39,14 +39,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
 import coil.compose.AsyncImage
+import com.dhruv.status.hub.utils.FileUtils
 import com.dhruv.status.hub.utils.isFavorite
 import com.dhruv.status.hub.utils.toggleFavorite
 
-/**
- * DownloadedMediaPreviewer Composable
- * 
- * Updated to support Video, Image, and Audio playback.
- */
+private const val TAG =
+    "DownloadedMediaPreviewer"
+
 @Composable
 fun DownloadedMediaPreviewer(
     selectedMedia: Uri,
@@ -54,171 +53,518 @@ fun DownloadedMediaPreviewer(
     onClose: () -> Unit,
     onDelete: (Uri) -> Unit
 ) {
-    val context = LocalContext.current
-    val currentIndex = mediaList.indexOf(selectedMedia).coerceAtLeast(0)
-    val pagerState = rememberPagerState(
-        initialPage = currentIndex,
-        pageCount = { mediaList.size }
-    )
 
-    var showControls by remember { mutableStateOf(true) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    val context =
+        LocalContext.current
 
-    BackHandler { onClose() }
+    val currentIndex =
+        mediaList
+            .indexOf(selectedMedia)
+            .coerceAtLeast(0)
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    val pagerState =
+        rememberPagerState(
+            initialPage = currentIndex,
+            pageCount = {
+                mediaList.size
+            }
+        )
+
+    var showControls by
+    remember {
+        mutableStateOf(true)
+    }
+
+    var showDeleteDialog by
+    remember {
+        mutableStateOf(false)
+    }
+
+    BackHandler {
+        onClose()
+    }
+
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+    ) {
+
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier =
+                Modifier.fillMaxSize()
         ) { page ->
-            val itemUri = mediaList[page]
-            val mimeType = context.contentResolver.getType(itemUri) ?: ""
-            val isVideo = mimeType.startsWith("video") || itemUri.toString().lowercase().contains(".mp4")
-            val isAudio = mimeType.startsWith("audio") || itemUri.toString().lowercase().contains(".mp3") || itemUri.toString().lowercase().contains(".m4a")
 
-            when {
-                isVideo -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        VideoPlayer(uri = itemUri, modifier = Modifier.weight(1f))
-                        Spacer(modifier = Modifier.navigationBarsPadding().height(60.dp))
+            val itemUri =
+                mediaList[page]
+
+            val mimeType =
+                remember(itemUri) {
+                    context.contentResolver
+                        .getType(itemUri)
+                        ?.lowercase()
+                        ?: ""
+                }
+
+            /*
+             * Image is determined from MIME.
+             */
+            val isImage =
+                mimeType.startsWith("image/")
+
+            /*
+             * Audio is determined primarily from MIME.
+             *
+             * This is important for audio/webm.
+             */
+            val isMimeAudio =
+                mimeType.startsWith("audio/")
+
+            /*
+             * For files with an unknown MIME, inspect the actual tracks.
+             */
+            val isActuallyVideo =
+                remember(
+                    itemUri,
+                    mimeType
+                ) {
+
+                    if (isImage || isMimeAudio) {
+                        false
+                    } else {
+                        FileUtils.isActuallyVideo(
+                            context,
+                            itemUri
+                        )
                     }
                 }
+
+            val isAudio =
+                !isImage &&
+                        (
+                                isMimeAudio ||
+                                        !isActuallyVideo
+                                )
+
+            Log.d(
+                TAG,
+                "Player selection: " +
+                        "uri=$itemUri " +
+                        "mime=$mimeType " +
+                        "isImage=$isImage " +
+                        "isVideo=$isActuallyVideo " +
+                        "isAudio=$isAudio"
+            )
+
+            when {
+
+                /*
+                 * -------------------------------------------------
+                 * VIDEO
+                 * -------------------------------------------------
+                 */
+                isActuallyVideo -> {
+
+                    Column(
+                        modifier =
+                            Modifier.fillMaxSize()
+                    ) {
+
+                        VideoPlayer(
+                            uri = itemUri,
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier
+                                    .navigationBarsPadding()
+                                    .height(60.dp)
+                        )
+                    }
+                }
+
+                /*
+                 * -------------------------------------------------
+                 * AUDIO
+                 * -------------------------------------------------
+                 */
                 isAudio -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        // Audio Visualizer / Placeholder
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                    Box(
+                        modifier =
+                            Modifier.fillMaxSize(),
+                        contentAlignment =
+                            Alignment.Center
+                    ) {
+
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = 20.dp
+                                    ),
+                            horizontalAlignment =
+                                Alignment.CenterHorizontally
+                        ) {
+
                             Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                shape = CircleShape,
-                                modifier = Modifier.size(120.dp)
+                                color =
+                                    MaterialTheme
+                                        .colorScheme
+                                        .primary
+                                        .copy(alpha = 0.2f),
+                                shape =
+                                    CircleShape,
+                                modifier =
+                                    Modifier.size(140.dp)
                             ) {
+
                                 Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(32.dp)
+                                    imageVector =
+                                        Icons.Default.MusicNote,
+                                    contentDescription =
+                                        "Audio",
+                                    tint =
+                                        MaterialTheme
+                                            .colorScheme
+                                            .primary,
+                                    modifier =
+                                        Modifier.padding(
+                                            38.dp
+                                        )
                                 )
                             }
-                            Spacer(Modifier.height(24.dp))
-                            val fileName = DocumentFile.fromSingleUri(context, itemUri)?.name ?: "Audio File"
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(24.dp)
+                            )
+
+                            val fileName =
+                                DocumentFile
+                                    .fromSingleUri(
+                                        context,
+                                        itemUri
+                                    )
+                                    ?.name
+                                    ?: "Audio File"
+
                             Text(
                                 text = fileName,
                                 color = Color.White,
                                 fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 32.dp),
+                                fontWeight =
+                                    FontWeight.Bold,
+                                textAlign =
+                                    TextAlign.Center,
+                                modifier =
+                                    Modifier.padding(
+                                        horizontal = 20.dp
+                                    ),
                                 maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                overflow =
+                                    TextOverflow.Ellipsis
                             )
-                            Spacer(Modifier.height(48.dp))
-                            // Reuse VideoPlayer logic for audio as it's an ExoPlayer wrapper
-                            VideoPlayer(uri = itemUri, modifier = Modifier.height(100.dp).fillMaxWidth())
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(36.dp)
+                            )
+
+                            /*
+                             * IMPORTANT:
+                             *
+                             * Audio goes to AudioPlayer.
+                             * It must NEVER use VideoPlayer.
+                             */
+                            AudioPlayer(
+                                uri = itemUri,
+                                modifier =
+                                    Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
+
+                /*
+                 * -------------------------------------------------
+                 * IMAGE
+                 * -------------------------------------------------
+                 */
                 else -> {
+
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) { showControls = !showControls },
-                        contentAlignment = Alignment.Center
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .clickable(
+                                    interactionSource =
+                                        remember {
+                                            MutableInteractionSource()
+                                        },
+                                    indication = null
+                                ) {
+                                    showControls =
+                                        !showControls
+                                },
+                        contentAlignment =
+                            Alignment.Center
                     ) {
+
                         AsyncImage(
                             model = itemUri,
-                            contentDescription = "Image preview",
-                            modifier = Modifier.fillMaxSize()
+                            contentDescription =
+                                "Image preview",
+                            modifier =
+                                Modifier.fillMaxSize()
                         )
                     }
                 }
             }
         }
 
-        // --- Overlays ---
+        /*
+         * ---------------------------------------------------------
+         * OVERLAYS
+         * ---------------------------------------------------------
+         */
 
-        val currentUri = mediaList[pagerState.currentPage]
-        val mimeType = context.contentResolver.getType(currentUri) ?: ""
-        val isPlaybackMedia = mimeType.startsWith("video") || mimeType.startsWith("audio") || 
-                             currentUri.toString().lowercase().let { it.contains(".mp4") || it.contains(".mp3") || it.contains(".m4a") }
+        val currentUri =
+            mediaList[
+                pagerState.currentPage
+                    .coerceIn(
+                        0,
+                        mediaList.lastIndex
+                    )
+            ]
 
-        val barBackground by animateColorAsState(
-            targetValue = if (isPlaybackMedia) Color.Black else Color.Black.copy(alpha = 0.4f),
+        val currentMime =
+            context.contentResolver
+                .getType(currentUri)
+                ?.lowercase()
+                ?: ""
+
+        val currentIsImage =
+            currentMime.startsWith("image/")
+
+        val currentIsPlaybackMedia =
+            !currentIsImage
+
+        val barBackground by
+        animateColorAsState(
+            targetValue =
+                if (currentIsPlaybackMedia) {
+                    Color.Black
+                } else {
+                    Color.Black.copy(
+                        alpha = 0.4f
+                    )
+                },
             label = "barBackground"
         )
 
+        /*
+         * Top back button
+         */
         AnimatedVisibility(
-            visible = showControls || isPlaybackMedia,
+            visible =
+                showControls ||
+                        currentIsPlaybackMedia,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.TopStart)
+            modifier =
+                Modifier.align(
+                    Alignment.TopStart
+                )
         ) {
+
             IconButton(
-                onClick = { onClose() },
-                modifier = Modifier
-                    .padding(top = 16.dp, start = 16.dp)
-                    .statusBarsPadding()
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    .size(48.dp)
+                onClick = {
+                    onClose()
+                },
+                modifier =
+                    Modifier
+                        .padding(
+                            top = 16.dp,
+                            start = 16.dp
+                        )
+                        .statusBarsPadding()
+                        .background(
+                            Color.Black.copy(
+                                alpha = 0.5f
+                            ),
+                            CircleShape
+                        )
+                        .size(48.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
             }
         }
 
+        /*
+         * Bottom action bar
+         */
         AnimatedVisibility(
-            visible = showControls || isPlaybackMedia,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            visible =
+                showControls ||
+                        currentIsPlaybackMedia,
+            enter =
+                slideInVertically(
+                    initialOffsetY = {
+                        it
+                    }
+                ) + fadeIn(),
+            exit =
+                slideOutVertically(
+                    targetOffsetY = {
+                        it
+                    }
+                ) + fadeOut(),
+            modifier =
+                Modifier.align(
+                    Alignment.BottomCenter
+                )
         ) {
+
             ActionBar(
                 uri = currentUri,
-                onDeleteClick = { showDeleteDialog = true },
+                onDeleteClick = {
+                    showDeleteDialog = true
+                },
                 background = barBackground
             )
         }
     }
 
+    /*
+     * -------------------------------------------------------------
+     * DELETE DIALOG
+     * -------------------------------------------------------------
+     */
+
     if (showDeleteDialog) {
-        val currentUri = mediaList[pagerState.currentPage]
-        Dialog(onDismissRequest = { showDeleteDialog = false }) {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(top = 24.dp, start = 24.dp, end = 24.dp, bottom = 16.dp)
-                ) {
-                    Text(
-                        text = "Delete this file permanently?",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Normal
+
+        val currentUri =
+            mediaList[
+                pagerState.currentPage
+                    .coerceIn(
+                        0,
+                        mediaList.lastIndex
                     )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
+            ]
+
+        Dialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+            }
+        ) {
+
+            Surface(
+                shape =
+                    RoundedCornerShape(28.dp),
+                color =
+                    MaterialTheme
+                        .colorScheme
+                        .surface,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 20.dp
+                        )
+            ) {
+
+                Column(
+                    modifier =
+                        Modifier.padding(
+                            top = 24.dp,
+                            start = 24.dp,
+                            end = 24.dp,
+                            bottom = 16.dp
+                        )
+                ) {
+
+                    Text(
+                        text =
+                            "Delete this file permanently?",
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurface,
+                        fontSize = 18.sp
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(24.dp)
+                    )
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier =
+                            Modifier.fillMaxWidth(),
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween,
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = { showDeleteDialog = false }) {
-                            Text("Cancel", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 16.sp)
-                        }
-                        
-                        Button(
+
+                        TextButton(
                             onClick = {
                                 showDeleteDialog = false
-                                onDelete(currentUri)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(50)
+                            }
                         ) {
-                            Text("Delete", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+
+                            Text(
+                                text = "Cancel",
+                                color =
+                                    MaterialTheme
+                                        .colorScheme
+                                        .onSurface
+                                        .copy(
+                                            alpha = 0.7f
+                                        ),
+                                fontSize = 16.sp
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+
+                                showDeleteDialog =
+                                    false
+
+                                onDelete(
+                                    currentUri
+                                )
+                            },
+                            colors =
+                                ButtonDefaults
+                                    .buttonColors(
+                                        containerColor =
+                                            MaterialTheme
+                                                .colorScheme
+                                                .primary
+                                    ),
+                            shape =
+                                RoundedCornerShape(50)
+                        ) {
+
+                            Text(
+                                text = "Delete",
+                                fontWeight =
+                                    FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
                         }
                     }
                 }
@@ -227,50 +573,130 @@ fun DownloadedMediaPreviewer(
     }
 }
 
-/**
- * ActionBar Composable
- */
 @Composable
 fun ActionBar(
     uri: Uri,
     onDeleteClick: () -> Unit,
     background: Color
 ) {
-    val context = LocalContext.current
-    var isFavorited by remember(uri) { mutableStateOf(isFavorite(context, uri.toString())) }
+
+    val context =
+        LocalContext.current
+
+    var isFavorited by
+    remember(uri) {
+
+        mutableStateOf(
+            isFavorite(
+                context,
+                uri.toString()
+            )
+        )
+    }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(background)
-            .navigationBarsPadding(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(background)
+                .navigationBarsPadding(),
+        horizontalArrangement =
+            Arrangement.SpaceEvenly,
+        verticalAlignment =
+            Alignment.CenterVertically
     ) {
-        IconButton(onClick = {
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = context.contentResolver.getType(uri) ?: "*/*"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(shareIntent, "Share Media"))
-        }) {
-            Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
-        }
 
-        IconButton(onClick = {
-            toggleFavorite(context, uri.toString())
-            isFavorited = !isFavorited
-        }) {
+        /*
+         * Share
+         */
+        IconButton(
+            onClick = {
+
+                val shareIntent =
+                    Intent(
+                        Intent.ACTION_SEND
+                    ).apply {
+
+                        type =
+                            context
+                                .contentResolver
+                                .getType(uri)
+                                ?: "*/*"
+
+                        putExtra(
+                            Intent.EXTRA_STREAM,
+                            uri
+                        )
+
+                        addFlags(
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+
+                context.startActivity(
+                    Intent.createChooser(
+                        shareIntent,
+                        "Share Media"
+                    )
+                )
+            }
+        ) {
+
             Icon(
-                imageVector = if (isFavorited) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "Favorite",
-                tint = if (isFavorited) Color.Red else Color.White
+                Icons.Default.Share,
+                contentDescription =
+                    "Share",
+                tint = Color.White
             )
         }
 
-        IconButton(onClick = onDeleteClick) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+        /*
+         * Favorite
+         */
+        IconButton(
+            onClick = {
+
+                toggleFavorite(
+                    context,
+                    uri.toString()
+                )
+
+                isFavorited =
+                    !isFavorited
+            }
+        ) {
+
+            Icon(
+                imageVector =
+                    if (isFavorited) {
+                        Icons.Default.Favorite
+                    } else {
+                        Icons.Default.FavoriteBorder
+                    },
+                contentDescription =
+                    "Favorite",
+                tint =
+                    if (isFavorited) {
+                        Color.Red
+                    } else {
+                        Color.White
+                    }
+            )
+        }
+
+        /*
+         * Delete
+         */
+        IconButton(
+            onClick = onDeleteClick
+        ) {
+
+            Icon(
+                Icons.Default.Delete,
+                contentDescription =
+                    "Delete",
+                tint = Color.White
+            )
         }
     }
 }
