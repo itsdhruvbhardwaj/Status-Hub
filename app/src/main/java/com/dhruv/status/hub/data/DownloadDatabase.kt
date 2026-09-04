@@ -6,9 +6,9 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 /**
- * Version 3: Added bitrate field to DownloadRecord.
+ * Version 4: Added dashAudioUrl field to DownloadRecord for YouTube 720p support.
  */
-@Database(entities = [DownloadRecord::class], version = 3, exportSchema = false)
+@Database(entities = [DownloadRecord::class], version = 4, exportSchema = false)
 abstract class DownloadDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
 

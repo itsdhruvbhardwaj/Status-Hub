@@ -21,7 +21,7 @@ import java.nio.ByteBuffer
 /**
  * Utility for file operations in Status Hub.
  * Restored to original behavior: Direct MediaStore saving based on container.
- * Added: MediaStore remuxing for Instagram audio extraction.
+ * Added: MediaStore remuxing for Instagram audio extraction and YouTube DASH muxing.
  */
 object FileUtils {
 
@@ -98,8 +98,6 @@ object FileUtils {
             val uri = resolver.insert(collection, contentValues) ?: return null
             
             // For Instagram Audio, we remux the video's audio track.
-            // Muxing directly to FileDescriptor via MediaMuxer requires API 26+.
-            // To support API 24, we mux to a temporary file first.
             if (isAudio && isActuallyVideoFile(tempFile)) {
                 val muxTempFile = File(context.cacheDir, "mux_${System.currentTimeMillis()}_$fileName")
                 val success = remuxAudioOnly(tempFile, muxTempFile)
@@ -173,7 +171,6 @@ object FileUtils {
                 
                 bufferInfo.presentationTimeUs = extractor.sampleTime
                 
-                // Map MediaExtractor flags to MediaCodec flags to fix lint warnings
                 var sampleFlags = 0
                 if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
                     sampleFlags = sampleFlags or MediaCodec.BUFFER_FLAG_KEY_FRAME
@@ -198,8 +195,89 @@ object FileUtils {
     }
 
     /**
+     * Muxes a separate video file and audio file into a single MP4.
+     * Used for YouTube DASH 720p streams.
+     */
+    fun muxVideoAudio(videoFile: File, audioFile: File, outputFile: File): Boolean {
+        val vExtractor = MediaExtractor()
+        val aExtractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        try {
+            vExtractor.setDataSource(videoFile.absolutePath)
+            aExtractor.setDataSource(audioFile.absolutePath)
+
+            muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+            var vTrackIndex = -1
+            for (i in 0 until vExtractor.trackCount) {
+                val format = vExtractor.getTrackFormat(i)
+                if (format.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true) {
+                    vTrackIndex = muxer.addTrack(format)
+                    vExtractor.selectTrack(i)
+                    break
+                }
+            }
+
+            var aTrackIndex = -1
+            for (i in 0 until aExtractor.trackCount) {
+                val format = aExtractor.getTrackFormat(i)
+                if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                    aTrackIndex = muxer.addTrack(format)
+                    aExtractor.selectTrack(i)
+                    break
+                }
+            }
+
+            if (vTrackIndex == -1 || aTrackIndex == -1) {
+                Log.e(TAG, "Missing video or audio track for muxing")
+                return false
+            }
+
+            muxer.start()
+
+            val buffer = ByteBuffer.allocate(1024 * 1024)
+            val info = MediaCodec.BufferInfo()
+
+            // Copy Video Samples
+            while (true) {
+                info.offset = 0
+                info.size = vExtractor.readSampleData(buffer, 0)
+                if (info.size < 0) break
+                info.presentationTimeUs = vExtractor.sampleTime
+                info.flags = if ((vExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) 
+                    MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                muxer.writeSampleData(vTrackIndex, buffer, info)
+                vExtractor.advance()
+            }
+
+            // Copy Audio Samples
+            while (true) {
+                info.offset = 0
+                info.size = aExtractor.readSampleData(buffer, 0)
+                if (info.size < 0) break
+                info.presentationTimeUs = aExtractor.sampleTime
+                info.flags = if ((aExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) 
+                    MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+                muxer.writeSampleData(aTrackIndex, buffer, info)
+                aExtractor.advance()
+            }
+
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "DASH muxing failed", e)
+            return false
+        } finally {
+            try { vExtractor.release() } catch (_: Exception) {}
+            try { aExtractor.release() } catch (_: Exception) {}
+            try {
+                muxer?.stop()
+                muxer?.release()
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
      * Legacy status-saver support.
-     * Restored from Play Store version.
      */
     fun downloadMedia(
         context: Context,

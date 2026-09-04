@@ -20,5 +20,6 @@ data class DownloadRecord(
     val status: String, // "QUEUED", "DOWNLOADING", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"
     val thumbnailUrl: String? = null,
     val downloadUrl: String? = null,
+    val dashAudioUrl: String? = null,
     val errorMessage: String? = null
 )

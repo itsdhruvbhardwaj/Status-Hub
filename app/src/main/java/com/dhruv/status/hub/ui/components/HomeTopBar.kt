@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
  * The top app bar for the main screen. It adapts its content based on whether
  * the user is in "Selection Mode" or viewing a specific folder.
  * 
- * @param title The title to display (e.g., "Status Hub" or "Audios").
+ * @param title The title to display.
  * @param isSelectionMode Whether multi-selection is active.
  * @param selectedCount The number of items currently selected.
  * @param onMenuClick Callback for the hamburger menu icon.
@@ -43,15 +43,12 @@ fun HomeTopBar(
     onDeleteClick: () -> Unit,
     onClearSelection: () -> Unit = {}
 ) {
-    // Elevate the top bar for a visual shadow effect
     Surface(shadowElevation = 4.dp) {
         TopAppBar(
             title = {
                 if (isSelectionMode) {
-                    // Show selection count if in selection mode
                     Text("$selectedCount Selected", fontWeight = FontWeight.Bold)
                 } else {
-                    // Show provided title in extra bold font
                     Text(
                         text = title,
                         fontWeight = FontWeight.ExtraBold,
@@ -61,17 +58,14 @@ fun HomeTopBar(
             },
             navigationIcon = {
                 if (isSelectionMode) {
-                    // Show cross icon to exit selection mode
                     IconButton(onClick = onClearSelection) {
                         Icon(Icons.Default.Close, contentDescription = "Clear Selection")
                     }
                 } else if (onBackClick != null) {
-                    // Show back arrow if onBackClick is provided (e.g., inside a folder)
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 } else {
-                    // Show hamburger menu normally
                     IconButton(onClick = onMenuClick) {
                         Icon(Icons.Default.Menu, contentDescription = "Menu")
                     }
@@ -79,12 +73,10 @@ fun HomeTopBar(
             },
             actions = {
                 if (isSelectionMode) {
-                    // Show delete icon during selection
                     IconButton(onClick = onDeleteClick) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete")
                     }
                 } else {
-                    // Show settings icon normally
                     IconButton(
                         onClick = onSettingsClick,
                         modifier = Modifier.size(40.dp)

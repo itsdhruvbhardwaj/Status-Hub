@@ -66,7 +66,8 @@ object NetworkDownloadUtils {
         val isAudio: Boolean = false,
         val hasVideo: Boolean = true,
         val hasAudio: Boolean = true,
-        val note: String? = null
+        val note: String? = null,
+        val dashAudioUrl: String? = null
     )
 
     suspend fun analyzeUrl(url: String, onStateChange: (DownloadState) -> Unit) {

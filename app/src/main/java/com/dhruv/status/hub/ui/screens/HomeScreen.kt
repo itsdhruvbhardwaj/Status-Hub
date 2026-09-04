@@ -92,7 +92,7 @@ fun HomeScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
 
-    // Filter downloaded media based on the current folder
+    // Logic to filter the list based on current folder for both Grid and Previewer
     val filteredDownloadedList = remember(downloadedList, currentFolder, favorites) {
         if (currentFolder == null) downloadedList
         else {

@@ -65,6 +65,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             status = "QUEUED",
             thumbnailUrl = info.thumbnailUrl,
             downloadUrl = format?.url ?: info.url,
+            dashAudioUrl = format?.dashAudioUrl,
             totalBytes = format?.size ?: -1L
         )
 
