@@ -2,7 +2,11 @@ package com.dhruv.status.hub.utils
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -11,11 +15,13 @@ import android.util.Log
 import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
 
 /**
  * Utility for file operations in Status Hub.
  * Restored to original behavior: Direct MediaStore saving based on container.
- * Restored legacy status-saver support required by MediaPreviewer.
+ * Added: MediaStore remuxing for Instagram audio extraction.
  */
 object FileUtils {
 
@@ -35,8 +41,23 @@ object FileUtils {
         }
     }
 
+    private fun isActuallyVideoFile(file: File): Boolean {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            val hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
+            hasVideo == "yes"
+        } catch (e: Exception) {
+            false
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+    }
+
     /**
      * Saves downloaded temporary media into MediaStore.
+     * If the target is audio but the source is a video (Instagram Reel),
+     * it remuxes the audio track into a standalone M4A file.
      */
     fun saveTempFileToMediaStore(
         context: Context,
@@ -75,9 +96,31 @@ object FileUtils {
 
         return try {
             val uri = resolver.insert(collection, contentValues) ?: return null
-            resolver.openOutputStream(uri)?.use { output ->
-                tempFile.inputStream().use { input -> input.copyTo(output) }
+            
+            // For Instagram Audio, we remux the video's audio track.
+            // Muxing directly to FileDescriptor via MediaMuxer requires API 26+.
+            // To support API 24, we mux to a temporary file first.
+            if (isAudio && isActuallyVideoFile(tempFile)) {
+                val muxTempFile = File(context.cacheDir, "mux_${System.currentTimeMillis()}_$fileName")
+                val success = remuxAudioOnly(tempFile, muxTempFile)
+                
+                if (success) {
+                    resolver.openOutputStream(uri)?.use { output ->
+                        muxTempFile.inputStream().use { input -> input.copyTo(output) }
+                    }
+                    muxTempFile.delete()
+                } else {
+                    muxTempFile.delete()
+                    resolver.delete(uri, null, null)
+                    return null
+                }
+            } else {
+                // Direct copy for standard media
+                resolver.openOutputStream(uri)?.use { output ->
+                    tempFile.inputStream().use { input -> input.copyTo(output) }
+                }
             }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentValues.clear()
                 contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
@@ -87,6 +130,70 @@ object FileUtils {
         } catch (e: Exception) {
             Log.e(TAG, "Save failed", e)
             null
+        }
+    }
+
+    /**
+     * Extracts the audio track from a source MP4 and muxes it into a destination M4A.
+     * No re-encoding occurs; AAC samples are copied directly.
+     */
+    private fun remuxAudioOnly(sourceFile: File, outputFile: File): Boolean {
+        val extractor = MediaExtractor()
+        var muxer: MediaMuxer? = null
+        try {
+            extractor.setDataSource(sourceFile.absolutePath)
+            var audioTrackIndex = -1
+            
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio/")) {
+                    audioTrackIndex = i
+                    extractor.selectTrack(i)
+                    
+                    muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                    muxer.addTrack(format)
+                    muxer.start()
+                    break
+                }
+            }
+
+            if (audioTrackIndex == -1 || muxer == null) {
+                Log.e(TAG, "No audio track found in source file")
+                return false
+            }
+
+            val buffer = ByteBuffer.allocate(1024 * 1024)
+            val bufferInfo = MediaCodec.BufferInfo()
+            
+            while (true) {
+                bufferInfo.offset = 0
+                bufferInfo.size = extractor.readSampleData(buffer, 0)
+                if (bufferInfo.size < 0) break
+                
+                bufferInfo.presentationTimeUs = extractor.sampleTime
+                
+                // Map MediaExtractor flags to MediaCodec flags to fix lint warnings
+                var sampleFlags = 0
+                if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
+                    sampleFlags = sampleFlags or MediaCodec.BUFFER_FLAG_KEY_FRAME
+                }
+                bufferInfo.flags = sampleFlags
+                
+                muxer.writeSampleData(0, buffer, bufferInfo)
+                extractor.advance()
+            }
+            
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Audio extraction failed", e)
+            return false
+        } finally {
+            try { extractor.release() } catch (_: Exception) {}
+            try {
+                muxer?.stop()
+                muxer?.release()
+            } catch (_: Exception) {}
         }
     }
 

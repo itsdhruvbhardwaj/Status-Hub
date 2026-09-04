@@ -2,6 +2,8 @@ package com.dhruv.status.hub.ui.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
@@ -18,22 +20,28 @@ import androidx.compose.ui.unit.sp
  * HomeTopBar Composable
  * 
  * The top app bar for the main screen. It adapts its content based on whether
- * the user is in "Selection Mode" (e.g., when deleting downloaded items).
+ * the user is in "Selection Mode" or viewing a specific folder.
  * 
+ * @param title The title to display (e.g., "Status Hub" or "Audios").
  * @param isSelectionMode Whether multi-selection is active.
  * @param selectedCount The number of items currently selected.
  * @param onMenuClick Callback for the hamburger menu icon.
+ * @param onBackClick Optional callback for a back navigation icon.
  * @param onSettingsClick Callback for the settings icon button.
  * @param onDeleteClick Callback for the delete icon button.
+ * @param onClearSelection Callback to clear current selection.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeTopBar(
+    title: String = "Status Hub",
     isSelectionMode: Boolean,
     selectedCount: Int,
     onMenuClick: () -> Unit,
+    onBackClick: (() -> Unit)? = null,
     onSettingsClick: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onClearSelection: () -> Unit = {}
 ) {
     // Elevate the top bar for a visual shadow effect
     Surface(shadowElevation = 4.dp) {
@@ -43,18 +51,27 @@ fun HomeTopBar(
                     // Show selection count if in selection mode
                     Text("$selectedCount Selected", fontWeight = FontWeight.Bold)
                 } else {
-                    // Show app name in cursive font otherwise
+                    // Show provided title in extra bold font
                     Text(
-                        text = "Status Hub",
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Cursive,
-                        fontSize = 28.sp
+                        text = title,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 24.sp
                     )
                 }
             },
             navigationIcon = {
-                // Show hamburger menu if not in selection mode
-                if (!isSelectionMode) {
+                if (isSelectionMode) {
+                    // Show cross icon to exit selection mode
+                    IconButton(onClick = onClearSelection) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear Selection")
+                    }
+                } else if (onBackClick != null) {
+                    // Show back arrow if onBackClick is provided (e.g., inside a folder)
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                } else {
+                    // Show hamburger menu normally
                     IconButton(onClick = onMenuClick) {
                         Icon(Icons.Default.Menu, contentDescription = "Menu")
                     }

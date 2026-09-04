@@ -67,12 +67,11 @@ fun OnboardingScreen(onContinue: () -> Unit) {
             
             Spacer(modifier = Modifier.height(20.dp))
             
-            // Application Title
+            // Application Title - Changed from Cursive to Normal Bold
             Text(
                 text = "Status Hub",
                 fontSize = 42.sp, 
                 fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Cursive, 
                 color = Color.Black
             )
 

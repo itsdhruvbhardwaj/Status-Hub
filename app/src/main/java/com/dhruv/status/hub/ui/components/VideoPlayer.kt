@@ -15,7 +15,8 @@ import androidx.media3.ui.PlayerView
 /**
  * VideoPlayer Composable
  * 
- * Optimized to handle both Video and Audio playback.
+ * Optimized to handle video playback.
+ * Syncs playback state with the [autoPlay] parameter to ensure only the visible pager item plays.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -30,9 +31,15 @@ fun VideoPlayer(
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             prepare()
-            playWhenReady = autoPlay
+            // neighbor pre-loaded items should not start playing automatically
+            playWhenReady = false 
             repeatMode = Player.REPEAT_MODE_OFF
         }
+    }
+
+    // React to pager visibility changes
+    LaunchedEffect(autoPlay) {
+        exoPlayer.playWhenReady = autoPlay
     }
 
     DisposableEffect(exoPlayer) {

@@ -70,8 +70,12 @@ fun MediaPreviewer(
 
             Box(modifier = Modifier.fillMaxSize()) {
                 if (isItemVideo) {
-                    // Use custom VideoPlayer for video content
-                    VideoPlayer(uri = itemUri, modifier = Modifier.fillMaxSize())
+                    // Pass autoPlay = true only if this is the currently visible page
+                    VideoPlayer(
+                        uri = itemUri, 
+                        modifier = Modifier.fillMaxSize(),
+                        autoPlay = pagerState.currentPage == page
+                    )
                 } else {
                     // Use AsyncImage for static images
                     AsyncImage(model = itemUri, contentDescription = null, modifier = Modifier.fillMaxSize())

@@ -92,6 +92,28 @@ fun HomeScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
 
+    // Filter downloaded media based on the current folder
+    val filteredDownloadedList = remember(downloadedList, currentFolder, favorites) {
+        if (currentFolder == null) downloadedList
+        else {
+            when (currentFolder) {
+                "Images" -> downloadedList.filter { context.contentResolver.getType(it)?.startsWith("image") == true }
+                "Videos" -> downloadedList.filter { context.contentResolver.getType(it)?.startsWith("video") == true }
+                "Audios" -> downloadedList.filter { 
+                    val type = context.contentResolver.getType(it) ?: ""
+                    type.startsWith("audio") || it.toString().lowercase().let { s -> s.contains(".mp3") || s.contains(".m4a") }
+                }
+                "Favorites" -> downloadedList.filter { favorites.contains(it.toString()) }
+                else -> downloadedList
+            }
+        }
+    }
+
+    // Clear selection when folder or tab changes
+    LaunchedEffect(selectedTab, currentFolder) {
+        selectedItems.value = emptySet()
+    }
+
     // Preload ad on screen start
     LaunchedEffect(Unit) { 
         AdsManager.loadInterstitial(context) 
@@ -170,7 +192,6 @@ fun HomeScreen(
             downloadedList = FileUtils.getDownloadedMedia(context)
             favorites = getFavorites(context)
         } else {
-            selectedItems.value = emptySet()
             currentFolder = null
         }
     }
@@ -197,6 +218,7 @@ fun HomeScreen(
                 drawerState.isOpen -> scope.launch { drawerState.close() }
                 isSelectionMode -> selectedItems.value = emptySet()
                 currentFolder != null -> currentFolder = null
+                else -> (context as? Activity)?.finish()
             }
         }
 
@@ -218,11 +240,14 @@ fun HomeScreen(
             Scaffold(
                 topBar = {
                     HomeTopBar(
+                        title = currentFolder ?: if (selectedTab == 2) "Downloads" else "Status Hub",
                         isSelectionMode = isSelectionMode,
                         selectedCount = selectedItems.value.size,
                         onMenuClick = { scope.launch { drawerState.open() } },
+                        onBackClick = if (currentFolder != null && !isSelectionMode) { { currentFolder = null } } else null,
                         onSettingsClick = { showSettings = true },
-                        onDeleteClick = { showDeleteDialog = true }
+                        onDeleteClick = { showDeleteDialog = true },
+                        onClearSelection = { selectedItems.value = emptySet() }
                     )
                 }
             ) { innerPadding ->
@@ -252,6 +277,7 @@ fun HomeScreen(
                                     imageList = imageList,
                                     videoList = videoList,
                                     downloadedList = downloadedList,
+                                    filteredDownloadedList = filteredDownloadedList,
                                     favorites = favorites,
                                     selectedItems = selectedItems.value,
                                     isSelectionMode = isSelectionMode,
@@ -286,7 +312,7 @@ fun HomeScreen(
                 if (selectedTab == 2) {
                     DownloadedMediaPreviewer(
                         selectedMedia = uri, 
-                        mediaList = downloadedList, 
+                        mediaList = filteredDownloadedList, 
                         onClose = { 
                             selectedMedia = null
                             downloadedList = FileUtils.getDownloadedMedia(context)
@@ -336,6 +362,7 @@ fun HomeTabContent(
     imageList: List<Uri>,
     videoList: List<Uri>,
     downloadedList: List<Uri>,
+    filteredDownloadedList: List<Uri>,
     favorites: Set<String>,
     selectedItems: Set<Uri>,
     isSelectionMode: Boolean,
@@ -346,37 +373,19 @@ fun HomeTabContent(
     val context = LocalContext.current
     AnimatedContent(targetState = selectedTab, label = "tab_anim") { targetTab ->
         when (targetTab) {
-            0 -> if (imageList.isEmpty()) EmptyStateContent("No statuses found.", "") else ImageGrid(imageList, onClick = onMediaClick)
-            1 -> if (videoList.isEmpty()) EmptyStateContent("No videos found.", "") else VideoGrid(videoList, onClick = onMediaClick)
+            0 -> if (imageList.isEmpty()) EmptyStateContent("No statuses found.", "Please watch some statuses on WhatsApp first.") else MediaGrid(mediaList = imageList, selectedItems = selectedItems, onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) }, onItemLongClick = { onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) })
+            1 -> if (videoList.isEmpty()) EmptyStateContent("No videos found.", "Please watch some statuses on WhatsApp first.") else MediaGrid(mediaList = videoList, selectedItems = selectedItems, onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) }, onItemLongClick = { onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) })
             2 -> {
                 if (currentFolder == null) {
                     DownloadsFolderGrid(downloadedList, favorites, onFolderSelected)
                 } else {
-                    val filtered = remember(downloadedList, currentFolder, favorites) {
-                        when (currentFolder) {
-                            "Images" -> downloadedList.filter { context.contentResolver.getType(it)?.startsWith("image") == true }
-                            "Videos" -> downloadedList.filter { context.contentResolver.getType(it)?.startsWith("video") == true }
-                            "Audios" -> downloadedList.filter { 
-                                val type = context.contentResolver.getType(it) ?: ""
-                                type.startsWith("audio") || it.toString().lowercase().let { s -> s.contains(".mp3") || s.contains(".m4a") }
-                            }
-                            "Favorites" -> downloadedList.filter { favorites.contains(it.toString()) }
-                            else -> downloadedList
-                        }
-                    }
                     Column(Modifier.fillMaxSize()) {
-                        Row(Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { onFolderSelected(null) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-                            Text(currentFolder ?: "", fontWeight = FontWeight.Black, fontSize = 20.sp, color = MaterialTheme.colorScheme.onBackground)
-                        }
-                        if (filtered.isEmpty()) {
+                        if (filteredDownloadedList.isEmpty()) {
                             EmptyStateContent("Folder is Empty", "")
                         } else {
                             if (currentFolder == "Audios") {
                                 AudioRowList(
-                                    audioList = filtered, 
+                                    audioList = filteredDownloadedList, 
                                     selectedItems = selectedItems,
                                     isSelectionMode = isSelectionMode,
                                     onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) },
@@ -384,7 +393,7 @@ fun HomeTabContent(
                                     onDeleteClick = onDeleteSingle
                                 )
                             } else {
-                                MediaGrid(mediaList = filtered, selectedItems = selectedItems, onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) }, onItemLongClick = { onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) })
+                                MediaGrid(mediaList = filteredDownloadedList, selectedItems = selectedItems, onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) }, onItemLongClick = { onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) })
                             }
                         }
                     }
@@ -405,7 +414,7 @@ fun AudioRowList(
     onDeleteClick: (Uri) -> Unit = {}
 ) {
     val context = LocalContext.current
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp, top = 2.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp, top = 0.dp)) {
         items(audioList, key = { it.toString() }) { uri ->
             val fileName = remember(uri) { getAudioDisplayName(context, uri) }
             val isSelected = selectedItems.contains(uri)
@@ -513,9 +522,10 @@ fun DownloadsFolderGrid(downloadedList: List<Uri>, favorites: Set<String>, onFol
     Column(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 0.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        Spacer(Modifier.height(8.dp))
         folders.chunked(2).forEach { rowFolders ->
             Row(
                 modifier = Modifier
@@ -578,6 +588,11 @@ fun ModernFolderItem(folder: FolderInfo, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "${folder.count} items",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
                     Spacer(Modifier.weight(1f))
                     Icon(
                         Icons.Default.ArrowForward,
@@ -632,7 +647,7 @@ private fun DrawerHeader() {
             .size(64.dp)
             .clip(RoundedCornerShape(12.dp)))
         Spacer(Modifier.height(16.dp))
-        Text("Status Hub", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        Text("Status Hub", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
         Text("Status Saver & Media Manager", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {

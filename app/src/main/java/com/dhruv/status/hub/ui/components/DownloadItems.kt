@@ -1,7 +1,9 @@
 package com.dhruv.status.hub.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -11,17 +13,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dhruv.status.hub.data.DownloadRecord
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun ActiveDownloadItem(
@@ -60,6 +59,19 @@ fun ActiveDownloadItem(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
+                        // Media Type Overlay
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (record.mediaType == "audio") Icons.Default.MusicNote else Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.padding(2.dp).size(10.dp),
+                                tint = Color.White
+                            )
+                        }
                     } else {
                         Icon(
                             imageVector = if (isQueued) Icons.Default.HourglassEmpty
@@ -160,19 +172,32 @@ fun ActiveDownloadItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryItem(
     record: DownloadRecord,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
     onOpen: () -> Unit,
+    onLongClick: () -> Unit = {},
     onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        onClick = onOpen,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) 
+            else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) 
+                 else BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Row(
             modifier = Modifier.padding(10.dp).fillMaxWidth(),
@@ -182,13 +207,28 @@ fun HistoryItem(
                 modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer),
                 contentAlignment = Alignment.Center
             ) {
-                if (!record.thumbnailUrl.isNullOrEmpty()) {
+                if (isSelected) {
+                    Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                } else if (!record.thumbnailUrl.isNullOrEmpty()) {
                     AsyncImage(
                         model = record.thumbnailUrl,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
+                    // Media Type Overlay
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (record.mediaType == "audio") Icons.Default.MusicNote else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.padding(2.dp).size(10.dp),
+                            tint = Color.White
+                        )
+                    }
                 } else {
                     Icon(
                         imageVector = if (record.mediaType == "audio") Icons.Default.AudioFile else Icons.Default.VideoFile,
@@ -202,14 +242,23 @@ fun HistoryItem(
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(record.fileName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${record.quality} • ${formatFileSize(record.totalBytes)} • ${record.format.uppercase()}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val typeLabel = if (record.mediaType == "audio") "Audio" else "Video"
+                Text("$typeLabel • ${record.quality} • ${formatFileSize(record.totalBytes)} • ${record.format.uppercase()}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onLongClick() },
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                }
             }
         }
     }

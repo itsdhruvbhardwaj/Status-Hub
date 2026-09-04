@@ -19,16 +19,57 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
         val baseUrl = if (url.contains("?")) url.substringBefore("?") else url
         val cleanUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
 
-        // Attempt 1: Using Crawler User Agent (Video Prioritized)
+        // 1. Fetch using Crawler UA (usually gets cleaner OpenGraph meta tags)
         val crawlerResult = tryFetch(cleanUrl, CRAWLER_USER_AGENT)
-        if (crawlerResult?.mediaType == "video") return crawlerResult
 
-        // Attempt 2: Using Browser User Agent
-        val browserResult = tryFetch(cleanUrl, USER_AGENT)
-        if (browserResult?.mediaType == "video") return browserResult
+        // 2. Fetch using Browser UA only if crawler didn't find a video
+        val browserResult = if (crawlerResult?.mediaType != "video") {
+            tryFetch(cleanUrl, USER_AGENT)
+        } else null
 
-        // If no video found in either attempt, return whichever detection worked
-        return crawlerResult ?: browserResult
+        // Priority: Video Result > Image Result
+        val result = when {
+            crawlerResult?.mediaType == "video" -> crawlerResult
+            browserResult?.mediaType == "video" -> browserResult
+            crawlerResult != null -> crawlerResult
+            else -> browserResult
+        }
+
+        // 3. Ensure Reel extraction ALWAYS returns both formats if a video URL is present
+        if (result != null && result.mediaType == "video") {
+            val formats = mutableListOf<NetworkDownloadUtils.MediaFormat>()
+
+            // Video format: the original Reel MP4 URL, extension mp4, format MP4.
+            formats.add(NetworkDownloadUtils.MediaFormat(
+                id = "insta_video",
+                url = result.url,
+                quality = "Standard Quality",
+                extension = "mp4",
+                format = "MP4",
+                isAudio = false,
+                hasVideo = true,
+                hasAudio = true
+            ))
+
+            // Audio format: the SAME Reel MP4 URL, marked isAudio=true, extension m4a.
+            formats.add(NetworkDownloadUtils.MediaFormat(
+                id = "insta_audio",
+                url = result.url,
+                quality = "Original Audio",
+                extension = "m4a",
+                format = "M4A",
+                isAudio = true,
+                hasVideo = false,
+                hasAudio = true
+            ))
+
+            return result.copy(
+                formats = formats,
+                audioUrl = result.url
+            )
+        }
+
+        return result
     }
 
     private suspend fun tryFetch(url: String, userAgent: String): NetworkDownloadUtils.MediaInfo? {
@@ -37,6 +78,7 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
             .header("User-Agent", userAgent)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
             .header("Accept-Language", "en-US,en;q=0.5")
+            .header("Connection", "keep-alive")
             .build()
 
         try {
@@ -44,29 +86,30 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
                 if (!response.isSuccessful) return null
                 val html = response.body?.string() ?: return null
 
-                // 1. Extract Thumbnail (Always useful for preview)
-                val imageUrl = extractValue(html, "\"display_url\"\\s*:\\s*\"([^\"]+)\"")
-                    ?: extractValue(html, "display_url\":\"([^\"]+)\"")
-                    ?: extractValue(html, "<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"']")
-                val decodedThumbnail = imageUrl?.let { decodeUrl(it) }
-
-                // 2. Extract Video URL (High Priority)
+                // Identify Video URL (Highly robust regex suite)
                 val videoUrl = extractValue(html, "\"video_url\"\\s*:\\s*\"([^\"]+)\"")
                     ?: extractValue(html, "video_url\":\"([^\"]+)\"")
                     ?: extractValue(html, "<meta[^>]+property=[\"']og:video:secure_url[\"'][^>]+content=[\"']([^\"']+)[\"']")
+                    ?: extractValue(html, "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:video:secure_url[\"']")
                     ?: extractValue(html, "<meta[^>]+property=[\"']og:video[\"'][^>]+content=[\"']([^\"']+)[\"']")
-                    ?: extractValue(html, "\"video_versions\"\\s*:\\s*\\[\\s*\\{\\s*\"type\"\\s*:\\s*101,\\s*\"url\"\\s*:\\s*\"([^\"]+)\"")
+                    ?: extractValue(html, "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:video[\"']")
+                    ?: extractValue(html, "\"video_versions\"\\s*:\\s*\\[\\s*\\{\\s*\"url\"\\s*:\\s*\"([^\"]+)\"")
+                    ?: extractValue(html, "xdt_shortcode_media\":\\{.*?\"video_url\":\"([^\"]+)\"")
+                    ?: extractValue(html, "\"url\":\"([^\"]+\\.mp4[^\"]*)\"")
+                    ?: extractValue(html, "(https://[^\"\\s\\\\]+fbcdn\\.net[^\"\\s\\\\]+\\.mp4[^\"\\s\\\\]*)")
+
+                // Identify Thumbnail URL
+                val imageUrl = extractValue(html, "\"display_url\"\\s*:\\s*\"([^\"]+)\"")
+                    ?: extractValue(html, "display_url\":\"([^\"]+)\"")
+                    ?: extractValue(html, "<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)[\"']")
+                    ?: extractValue(html, "<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:image[\"']")
+                    ?: extractValue(html, "<meta[^>]+property=[\"']twitter:image[\"'][^>]+content=[\"']([^\"']+)[\"']")
+
+                val decodedThumbnail = imageUrl?.let { decodeUrl(it) }
 
                 if (!videoUrl.isNullOrBlank()) {
                     val decodedVideoUrl = decodeUrl(videoUrl)
                     if (!decodedVideoUrl.contains("instagram.com/static/")) {
-                        val format = NetworkDownloadUtils.MediaFormat(
-                            id = "insta_video",
-                            url = decodedVideoUrl,
-                            quality = "Standard Quality",
-                            extension = "mp4",
-                            format = "MP4"
-                        )
                         return NetworkDownloadUtils.MediaInfo(
                             url = decodedVideoUrl,
                             fileName = "Instagram_Video_${System.currentTimeMillis()}.mp4",
@@ -75,14 +118,11 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
                             extension = "mp4",
                             mediaType = "video",
                             platform = "Instagram",
-                            thumbnailUrl = decodedThumbnail,
-                            audioUrl = decodedVideoUrl,
-                            formats = listOf(format)
+                            thumbnailUrl = decodedThumbnail
                         )
                     }
                 }
 
-                // 3. Fallback to Image if no video was found
                 if (!decodedThumbnail.isNullOrBlank() && !decodedThumbnail.contains("instagram.com/static/")) {
                     return NetworkDownloadUtils.MediaInfo(
                         url = decodedThumbnail,
@@ -106,6 +146,7 @@ class InstagramExtractor(private val client: OkHttpClient) : MediaExtractor {
         return url.replace("\\u0026", "&")
             .replace("&amp;", "&")
             .replace("\\/", "/")
+            .replace("&quot;", "\"")
     }
 
     private fun extractValue(content: String, regex: String): String? {

@@ -62,8 +62,7 @@ fun SettingsScreen(
                         Text(
                             text = "Settings",
                             fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Cursive,
-                            fontSize = 28.sp
+                            fontSize = 24.sp
                         )
                     },
                     navigationIcon = {

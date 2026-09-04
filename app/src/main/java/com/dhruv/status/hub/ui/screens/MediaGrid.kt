@@ -12,7 +12,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,13 +34,8 @@ import coil.request.ImageRequest
 /**
  * MediaGrid Composable
  * 
- * A versatile grid for displaying both images and videos. Supports multi-selection
- * through long-press and visual indicators for selected items.
- * 
- * @param mediaList List of URIs for the media items to display.
- * @param selectedItems A set of URIs currently selected by the user.
- * @param onItemClick Callback for single-tap on an item.
- * @param onItemLongClick Callback for long-press on an item (toggles selection mode).
+ * A versatile grid for displaying images, videos, and audios. 
+ * Supports multi-selection and clear identification of media types.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -50,60 +50,80 @@ fun MediaGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
-        // Extra bottom padding to ensure content isn't covered by the bottom bar
         contentPadding = PaddingValues(bottom = 80.dp, start = 4.dp, end = 4.dp, top = 4.dp)
     ) {
-        items(mediaList) { uri ->
-            // Determine if the item is a video for thumbnail generation and overlay
-            val isVideo = context.contentResolver.getType(uri)?.startsWith("video") == true ||
-                    uri.toString().contains(".mp4", true)
+        items(mediaList, key = { it.toString() }) { uri ->
+            val mimeType = context.contentResolver.getType(uri) ?: ""
+            val isVideo = mimeType.startsWith("video") || uri.toString().lowercase().contains(".mp4")
+            val isAudio = mimeType.startsWith("audio") || uri.toString().lowercase().let { it.contains(".mp3") || it.contains(".m4a") }
             val isSelected = selectedItems.contains(uri)
 
             Box(
                 modifier = Modifier
                     .padding(4.dp)
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .combinedClickable(
                         onClick = { onItemClick(uri) },
                         onLongClick = { onItemLongClick(uri) }
                     )
             ) {
-                // Load thumbnail. If it's a video, use VideoFrameDecoder to extract a frame.
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(uri)
-                        .apply {
-                            if (isVideo) {
-                                decoderFactory(VideoFrameDecoder.Factory())
-                            }
+                if (isAudio) {
+                    // Audio Placeholder
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                         }
-                        .build(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-
-                // Overlay a play icon for videos
-                if (isVideo) {
-                    Text(
-                        text = "▶",
-                        modifier = Modifier.align(Alignment.Center),
-                        color = Color.White
+                    }
+                } else {
+                    // Image or Video Thumbnail
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(uri)
+                            .apply {
+                                if (isVideo) {
+                                    decoderFactory(VideoFrameDecoder.Factory())
+                                }
+                            }
+                            .build(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
                 }
 
-                // Visual indicators for selected items (tint and checkmark)
+                // Media Type Identification Badge
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp),
+                    color = Color.Black.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Icon(
+                        imageVector = when {
+                            isAudio -> Icons.Default.MusicNote
+                            isVideo -> Icons.Default.PlayArrow
+                            else -> Icons.Default.Image
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.padding(2.dp).size(12.dp),
+                        tint = Color.White
+                    )
+                }
+
+                // Selection Overlay
                 if (isSelected) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.4f))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
                     )
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = "Selected",
-                        tint = Color.Black,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(6.dp)

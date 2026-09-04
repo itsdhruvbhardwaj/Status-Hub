@@ -22,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,14 +87,16 @@ fun DownloadFromLinkScreen(
 
     Scaffold(
         topBar = {
-            Surface(shadowElevation = 2.dp) {
+            Surface(
+                shadowElevation = 2.dp,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
                 TopAppBar(
                     title = {
                         Text(
                             text = "Status Hub",
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Cursive,
-                            fontSize = 26.sp
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 24.sp
                         )
                     },
                     navigationIcon = {
@@ -106,11 +107,11 @@ fun DownloadFromLinkScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
-                    actions = {
-                        IconButton(onClick = onNavigateToRecentDownloads) {
-                            Icon(Icons.Default.History, contentDescription = "History")
-                        }
-                    }
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 )
             }
         }
@@ -128,7 +129,7 @@ fun DownloadFromLinkScreen(
                 contentPadding = PaddingValues(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Section 1: URL Input (MUST ALWAYS BE AT TOP)
+                // Section 1: URL Input
                 item {
                     OutlinedTextField(
                         value = url,
@@ -250,7 +251,7 @@ fun DownloadFromLinkScreen(
                     }
                 }
 
-                // Section 3: Active Downloads (Now below analysis/input)
+                // Section 3: Active Downloads
                 if (activeDownloads.isNotEmpty()) {
                     item {
                         Text(
@@ -292,10 +293,7 @@ fun DownloadFromLinkScreen(
                     }
                 }
             }
-            
-            Box(modifier = Modifier.padding(bottom = 12.dp)) {
-                AdBanner()
-            }
+            AdBanner()
         }
     }
 }

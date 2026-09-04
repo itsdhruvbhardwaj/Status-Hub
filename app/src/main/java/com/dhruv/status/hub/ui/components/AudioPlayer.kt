@@ -15,6 +15,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -55,11 +56,13 @@ fun AudioPlayer(
                         Player.REPEAT_MODE_OFF
 
                     prepare()
-
-                    playWhenReady =
-                        autoPlay
                 }
         }
+
+    // Sync playWhenReady with the autoPlay parameter to stop audio when swiped away
+    LaunchedEffect(autoPlay) {
+        exoPlayer.playWhenReady = autoPlay
+    }
 
     DisposableEffect(exoPlayer) {
 
