@@ -1,30 +1,26 @@
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+-keepclassmembers class fqcn.of.javascript.interface.for.webview {
+   public *;
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable,JavascriptInterface,*Annotation*,Signature,InnerClasses,EnclosingMethod
+-dontwarn java.beans.**
+-dontwarn javax.script.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# --- YouTube Extractor Logic (CRITICAL FIX) ---
+# NewPipe uses reflection and internal dependencies that must be kept for analysis to work
+-keep class org.schabi.newpipe.extractor.** { *; }
+-keep interface org.schabi.newpipe.extractor.** { *; }
+-keep class com.grack.nanojson.** { *; }
+-keep class org.jsoup.** { *; }
+-dontwarn org.schabi.newpipe.extractor.**
+-dontwarn org.jsoup.**
+-dontwarn com.grack.nanojson.**
 
-# Please add these rules to your existing keep rules in order to suppress warnings.
-# This is generated automatically by the Android Gradle plugin.
--dontwarn java.beans.BeanDescriptor
--dontwarn java.beans.BeanInfo
--dontwarn java.beans.IntrospectionException
--dontwarn java.beans.Introspector
--dontwarn java.beans.PropertyDescriptor
--dontwarn javax.script.ScriptEngineFactory
+# --- AdMob Specific Rules ---
+-keep class com.google.android.gms.ads.** { *; }
+-keep class com.google.ads.** { *; }
+-keep class android.webkit.** { *; }

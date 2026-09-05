@@ -8,7 +8,7 @@ interface DownloadDao {
     @Query("SELECT * FROM download_records ORDER BY timestamp DESC")
     fun getAllRecords(): Flow<List<DownloadRecord>>
 
-    @Query("SELECT * FROM download_records WHERE status IN ('QUEUED', 'DOWNLOADING', 'PAUSED', 'FAILED') ORDER BY timestamp DESC")
+    @Query("SELECT * FROM download_records WHERE status IN ('QUEUED', 'DOWNLOADING', 'PAUSED', 'FAILED', 'PROCESSING') ORDER BY timestamp DESC")
     fun getActiveRecords(): Flow<List<DownloadRecord>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

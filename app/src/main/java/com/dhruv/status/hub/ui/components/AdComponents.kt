@@ -26,7 +26,7 @@ fun AdBanner(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (isAdLoaded) 60.dp else 0.dp)
+            .height(if (isAdLoaded) 50.dp else 0.dp) // Dynamic height to avoid empty space
             .background(Color.Transparent),
         contentAlignment = Alignment.Center
     ) {
@@ -46,6 +46,9 @@ fun AdBanner(modifier: Modifier = Modifier) {
                     }
                     loadAd(AdRequest.Builder().build())
                 }
+            },
+            update = { adView ->
+                // Ensure the ad is loaded if not already
             }
         )
     }

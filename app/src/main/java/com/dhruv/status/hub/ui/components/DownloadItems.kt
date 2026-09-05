@@ -33,8 +33,11 @@ fun ActiveDownloadItem(
     val isQueued = record.status == "QUEUED"
     val isFailed = record.status == "FAILED"
     val isPaused = record.status == "PAUSED"
+    val isProcessing = record.status == "PROCESSING"
+    
     val progress = if (record.totalBytes > 0) record.downloadedBytes.toFloat() / record.totalBytes else 0f
-    val percentText = if (record.totalBytes > 0) "${(progress * 100).toInt()}%" else "..."
+    // Show 100% explicitly during processing to avoid jumping back
+    val percentText = if (isProcessing) "100%" else if (record.totalBytes > 0) "${(progress * 100).toInt()}%" else "..."
     
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -88,8 +91,11 @@ fun ActiveDownloadItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(record.fileName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
                     Text(
-                        text = if (isQueued) "Waiting for connection..." 
-                               else "${record.quality} • ${record.format.uppercase()}", 
+                        text = when {
+                            isQueued -> "Waiting for connection..."
+                            isProcessing -> "Finalizing file..."
+                            else -> "${record.quality} • ${record.format.uppercase()}"
+                        },
                         fontSize = 12.sp, 
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -100,7 +106,11 @@ fun ActiveDownloadItem(
                 } else if (isPaused || isQueued || isFailed) {
                     IconButton(onClick = onResume) { Icon(Icons.Default.PlayArrow, null) }
                 }
-                IconButton(onClick = onCancel) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error) }
+                
+                // Hide cancel during processing to prevent corruption
+                if (!isProcessing) {
+                    IconButton(onClick = onCancel) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error) }
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -112,11 +122,19 @@ fun ActiveDownloadItem(
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
-                        color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
+                    if (isProcessing) {
+                        // Indeterminate progress during merging phase
+                        LinearProgressIndicator(
+                            modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
+                            color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Spacer(Modifier.width(12.dp))
                     Text(
                         text = percentText,
@@ -132,8 +150,11 @@ fun ActiveDownloadItem(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
                     Text(
-                        text = if (isQueued) "Queued" 
-                               else "${formatFileSize(record.downloadedBytes)} / ${formatFileSize(record.totalBytes)}",
+                        text = when {
+                            isQueued -> "Queued"
+                            isProcessing -> "Finishing up..."
+                            else -> "${formatFileSize(record.downloadedBytes)} / ${formatFileSize(record.totalBytes)}"
+                        },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface

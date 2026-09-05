@@ -58,7 +58,8 @@ fun DownloadFromLinkScreen(
     val allDownloads by viewModel.allDownloads.collectAsState()
     val speeds by DownloadManager.downloadSpeeds.collectAsState()
     
-    val activeDownloads = allDownloads.filter { it.status in listOf("QUEUED", "DOWNLOADING", "PAUSED", "FAILED") }
+    // Updated filter to include PROCESSING so the item stays visible while merging
+    val activeDownloads = allDownloads.filter { it.status in listOf("QUEUED", "DOWNLOADING", "PAUSED", "FAILED", "PROCESSING") }
     val recentCompleted = allDownloads.filter { it.status == "COMPLETED" }.take(5)
 
     // Handle initial URL analysis
@@ -320,7 +321,7 @@ private fun shareFile(context: Context, uriString: String) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Share Media"))
+        context.startActivity(intent)
     } catch (e: Exception) {
         Toast.makeText(context, "Cannot share file", Toast.LENGTH_SHORT).show()
     }
