@@ -96,12 +96,12 @@ object FileUtils {
 
         return try {
             val uri = resolver.insert(collection, contentValues) ?: return null
-            
+
             // For Instagram Audio, we remux the video's audio track.
             if (isAudio && isActuallyVideoFile(tempFile)) {
                 val muxTempFile = File(context.cacheDir, "mux_${System.currentTimeMillis()}_$fileName")
                 val success = remuxAudioOnly(tempFile, muxTempFile)
-                
+
                 if (success) {
                     resolver.openOutputStream(uri)?.use { output ->
                         muxTempFile.inputStream().use { input -> input.copyTo(output) }
@@ -141,14 +141,14 @@ object FileUtils {
         try {
             extractor.setDataSource(sourceFile.absolutePath)
             var audioTrackIndex = -1
-            
+
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
                 val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
                 if (mime.startsWith("audio/")) {
                     audioTrackIndex = i
                     extractor.selectTrack(i)
-                    
+
                     muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
                     muxer.addTrack(format)
                     muxer.start()
@@ -163,24 +163,24 @@ object FileUtils {
 
             val buffer = ByteBuffer.allocate(1024 * 1024)
             val bufferInfo = MediaCodec.BufferInfo()
-            
+
             while (true) {
                 bufferInfo.offset = 0
                 bufferInfo.size = extractor.readSampleData(buffer, 0)
                 if (bufferInfo.size < 0) break
-                
+
                 bufferInfo.presentationTimeUs = extractor.sampleTime
-                
+
                 var sampleFlags = 0
                 if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
                     sampleFlags = sampleFlags or MediaCodec.BUFFER_FLAG_KEY_FRAME
                 }
                 bufferInfo.flags = sampleFlags
-                
+
                 muxer.writeSampleData(0, buffer, bufferInfo)
                 extractor.advance()
             }
-            
+
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Audio extraction failed", e)
@@ -244,7 +244,7 @@ object FileUtils {
                 info.size = vExtractor.readSampleData(buffer, 0)
                 if (info.size < 0) break
                 info.presentationTimeUs = vExtractor.sampleTime
-                info.flags = if ((vExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) 
+                info.flags = if ((vExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0)
                     MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
                 muxer.writeSampleData(vTrackIndex, buffer, info)
                 vExtractor.advance()
@@ -256,7 +256,7 @@ object FileUtils {
                 info.size = aExtractor.readSampleData(buffer, 0)
                 if (info.size < 0) break
                 info.presentationTimeUs = aExtractor.sampleTime
-                info.flags = if ((aExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) 
+                info.flags = if ((aExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0)
                     MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
                 muxer.writeSampleData(aTrackIndex, buffer, info)
                 aExtractor.advance()
