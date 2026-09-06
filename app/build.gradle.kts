@@ -13,7 +13,7 @@ android {
         applicationId = "com.dhruv.status.hub"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
+        versionCode = 9
         versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -51,6 +51,9 @@ android {
 dependencies {
     // AdMob
     implementation(libs.play.services.ads)
+
+    // Google Play In-App Updates
+    implementation(libs.play.app.update)
 
     // Networking
     implementation(libs.okhttp)
