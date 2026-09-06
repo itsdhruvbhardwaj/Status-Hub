@@ -1,13 +1,19 @@
 package com.dhruv.status.hub
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import com.dhruv.status.hub.ui.screens.DownloadFromLinkScreen
 import com.dhruv.status.hub.ui.screens.HomeScreen
 import com.dhruv.status.hub.ui.screens.OnboardingScreen
@@ -61,6 +67,25 @@ class MainActivity : ComponentActivity() {
         setContent {
             val context = LocalContext.current
             val systemInDarkTheme = isSystemInDarkTheme()
+
+            // Request Notification Permission for Android 13+ (Targeting API 36)
+            val permissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                // Handle permission result if needed
+            }
+
+            LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            }
             
             // State for the app theme preference (System, Light, or Dark)
             var currentThemePref by remember { 

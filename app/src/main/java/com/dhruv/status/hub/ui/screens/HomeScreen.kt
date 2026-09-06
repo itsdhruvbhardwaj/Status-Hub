@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
+import com.dhruv.status.hub.BuildConfig
 import com.dhruv.status.hub.R
 import com.dhruv.status.hub.ui.components.*
 import com.dhruv.status.hub.utils.*
@@ -651,7 +652,7 @@ private fun DrawerHeader() {
         Text("Status Saver & Media Manager", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
-            Text("1.3.1" , Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text(BuildConfig.VERSION_NAME , Modifier.padding(horizontal = 12.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
