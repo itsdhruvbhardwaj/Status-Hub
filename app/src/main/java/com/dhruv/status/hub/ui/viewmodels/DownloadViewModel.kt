@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.dhruv.status.hub.data.DownloadDatabase
 import com.dhruv.status.hub.data.DownloadRecord
 import com.dhruv.status.hub.utils.DownloadManager
+import com.dhruv.status.hub.utils.FileUtils
 import com.dhruv.status.hub.utils.NetworkDownloadUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,5 +99,20 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
     fun resetState() {
         _downloadState.value = NetworkDownloadUtils.DownloadState.Idle
+    }
+
+    /**
+     * Scans MediaStore for StatusHub files and adds missing ones to the database.
+     */
+    fun syncOfflineFiles(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val mediaRecords = FileUtils.getDownloadedMediaRecords(context)
+            mediaRecords.forEach { record ->
+                val existing = record.fileUri?.let { downloadDao.getRecordByUri(it) }
+                if (existing == null) {
+                    downloadDao.insertRecord(record)
+                }
+            }
+        }
     }
 }

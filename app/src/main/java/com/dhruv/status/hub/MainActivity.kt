@@ -20,11 +20,13 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dhruv.status.hub.ui.screens.DownloadFromLinkScreen
 import com.dhruv.status.hub.ui.screens.HomeScreen
 import com.dhruv.status.hub.ui.screens.OnboardingScreen
 import com.dhruv.status.hub.ui.screens.RecentDownloadsScreen
 import com.dhruv.status.hub.ui.theme.StatusHubTheme
+import com.dhruv.status.hub.ui.viewmodels.DownloadViewModel
 import com.dhruv.status.hub.utils.*
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
@@ -78,6 +80,9 @@ class MainActivity : ComponentActivity() {
             val systemInDarkTheme = isSystemInDarkTheme()
             val snackbarHostState = remember { SnackbarHostState() }
             val scope = rememberCoroutineScope()
+            
+            // Get ViewModel to trigger sync
+            val downloadViewModel: DownloadViewModel = viewModel()
 
             // Update Listener for Flexible Updates
             val installStateListener = remember {
@@ -125,20 +130,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Request Notification Permission for Android 13+
+            // Request Permissions (Notifications & Storage)
             val permissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { }
+                ActivityResultContracts.RequestMultiplePermissions()
+            ) { permissions ->
+                if (permissions.values.any { it }) {
+                    downloadViewModel.syncOfflineFiles(context)
+                }
+            }
 
             LaunchedEffect(Unit) {
+                val permissions = mutableListOf<String>()
+                
+                // Notification Permission (Android 13+)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                     }
+                }
+
+                // Storage Permissions for scanning files from previous installations
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED)
+                        permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED)
+                        permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                        permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+                } else {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                        permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                }
+
+                if (permissions.isNotEmpty()) {
+                    permissionLauncher.launch(permissions.toTypedArray())
+                } else {
+                    downloadViewModel.syncOfflineFiles(context)
                 }
             }
             
@@ -171,6 +199,13 @@ class MainActivity : ComponentActivity() {
                 var onboardingFinished by remember { 
                     mutableStateOf(isOnboardingComplete(context)) 
                 }
+                
+                // Sync offline files once when onboarding is finished
+                LaunchedEffect(onboardingFinished) {
+                    if (onboardingFinished) {
+                        downloadViewModel.syncOfflineFiles(context)
+                    }
+                }
 
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -199,7 +234,8 @@ class MainActivity : ComponentActivity() {
                             }
                             "recent_downloads" -> {
                                 RecentDownloadsScreen(
-                                    onBack = { currentScreen = "home" }
+                                    onBack = { currentScreen = "home" },
+                                    viewModel = downloadViewModel
                                 )
                             }
                         }

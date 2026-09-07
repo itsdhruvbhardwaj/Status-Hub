@@ -81,7 +81,13 @@ fun HomeScreen(
     var imageList by remember { mutableStateOf(listOf<Uri>()) }
     var videoList by remember { mutableStateOf(listOf<Uri>()) }
     var downloadedList by remember { mutableStateOf(listOf<Uri>()) }
-    var favorites by remember { mutableStateOf(getFavorites(context)) }
+    var favorites by remember { mutableStateOf(setOf<String>()) }
+
+    // Optimization: Categorized lists loaded in background to prevent 3-second delay
+    var downloadedImages by remember { mutableStateOf(listOf<Uri>()) }
+    var downloadedVideos by remember { mutableStateOf(listOf<Uri>()) }
+    var downloadedAudios by remember { mutableStateOf(listOf<Uri>()) }
+    var downloadedFavorites by remember { mutableStateOf(listOf<Uri>()) }
 
     var isRefreshing by remember { mutableStateOf(false) }
     var isLoadingFirstTime by remember { mutableStateOf(false) }
@@ -93,20 +99,14 @@ fun HomeScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
 
-    // Logic to filter the list based on current folder for both Grid and Previewer
-    val filteredDownloadedList = remember(downloadedList, currentFolder, favorites) {
-        if (currentFolder == null) downloadedList
-        else {
-            when (currentFolder) {
-                "Images" -> downloadedList.filter { context.contentResolver.getType(it)?.startsWith("image") == true }
-                "Videos" -> downloadedList.filter { context.contentResolver.getType(it)?.startsWith("video") == true }
-                "Audios" -> downloadedList.filter { 
-                    val type = context.contentResolver.getType(it) ?: ""
-                    type.startsWith("audio") || it.toString().lowercase().let { s -> s.contains(".mp3") || s.contains(".m4a") }
-                }
-                "Favorites" -> downloadedList.filter { favorites.contains(it.toString()) }
-                else -> downloadedList
-            }
+    // Logic to select the pre-filtered list based on current folder
+    val filteredDownloadedList = remember(currentFolder, downloadedList, downloadedImages, downloadedVideos, downloadedAudios, downloadedFavorites) {
+        when (currentFolder) {
+            "Images" -> downloadedImages
+            "Videos" -> downloadedVideos
+            "Audios" -> downloadedAudios
+            "Favorites" -> downloadedFavorites
+            else -> downloadedList
         }
     }
 
@@ -145,9 +145,9 @@ fun HomeScreen(
 
     val loadData: suspend (Boolean) -> Unit = { isManualRefresh ->
         if (!isManualRefresh) isLoadingFirstTime = true
-        folderUri?.let { uri ->
-            withContext(Dispatchers.IO) {
-                try {
+        withContext(Dispatchers.IO) {
+            try {
+                folderUri?.let { uri ->
                     val docFile = DocumentFile.fromTreeUri(context, uri)
                     if (docFile != null && docFile.canRead()) {
                         val images = mutableListOf<Uri>()
@@ -174,11 +174,30 @@ fun HomeScreen(
                             videoList = videos.reversed()
                         }
                     }
-                } catch (e: Exception) { e.printStackTrace() }
-            }
+                }
+                
+                // Fetch and categorize downloads in background
+                val downloaded = FileUtils.getDownloadedMedia(context)
+                val favs = getFavorites(context)
+                val dImages = downloaded.filter { context.contentResolver.getType(it)?.startsWith("image") == true }
+                val dVideos = downloaded.filter { context.contentResolver.getType(it)?.startsWith("video") == true }
+                val dAudios = downloaded.filter { 
+                    val type = context.contentResolver.getType(it) ?: ""
+                    type.startsWith("audio") || it.toString().lowercase().let { s -> s.contains(".mp3") || s.contains(".m4a") }
+                }
+                val dFavs = downloaded.filter { favs.contains(it.toString()) }
+
+                withContext(Dispatchers.Main) {
+                    downloadedList = downloaded
+                    favorites = favs
+                    downloadedImages = dImages
+                    downloadedVideos = dVideos
+                    downloadedAudios = dAudios
+                    downloadedFavorites = dFavs
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+            withContext(Dispatchers.Main) { isLoadingFirstTime = false }
         }
-        downloadedList = FileUtils.getDownloadedMedia(context)
-        isLoadingFirstTime = false
     }
 
     LaunchedEffect(folderUri) {
@@ -190,8 +209,7 @@ fun HomeScreen(
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 2) {
-            downloadedList = FileUtils.getDownloadedMedia(context)
-            favorites = getFavorites(context)
+            loadData(true)
         } else {
             currentFolder = null
         }
@@ -203,10 +221,9 @@ fun HomeScreen(
                 selectedItems.value.forEach { uri ->
                     try { context.contentResolver.delete(uri, null, null) } catch (e: Exception) {}
                 }
+                loadData(true)
             }
             selectedItems.value = emptySet()
-            downloadedList = FileUtils.getDownloadedMedia(context)
-            favorites = getFavorites(context)
         }
     }
 
@@ -248,6 +265,17 @@ fun HomeScreen(
                         onBackClick = if (currentFolder != null && !isSelectionMode) { { currentFolder = null } } else null,
                         onSettingsClick = { showSettings = true },
                         onDeleteClick = { showDeleteDialog = true },
+                        onSelectAll = if (isSelectionMode) {
+                            {
+                                val allVisible = when (selectedTab) {
+                                    0 -> imageList
+                                    1 -> videoList
+                                    2 -> filteredDownloadedList
+                                    else -> emptyList()
+                                }
+                                selectedItems.value = allVisible.toSet()
+                            }
+                        } else null,
                         onClearSelection = { selectedItems.value = emptySet() }
                     )
                 }
@@ -279,6 +307,10 @@ fun HomeScreen(
                                     videoList = videoList,
                                     downloadedList = downloadedList,
                                     filteredDownloadedList = filteredDownloadedList,
+                                    downloadedImages = downloadedImages,
+                                    downloadedVideos = downloadedVideos,
+                                    downloadedAudios = downloadedAudios,
+                                    downloadedFavorites = downloadedFavorites,
                                     favorites = favorites,
                                     selectedItems = selectedItems.value,
                                     isSelectionMode = isSelectionMode,
@@ -297,6 +329,19 @@ fun HomeScreen(
                                     }
                                 )
                             }
+                            
+                            // Download from Link FAB component
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(bottom = 100.dp, end = 32.dp)
+                            ) {
+                                DownloadFab(
+                                    visible = (selectedTab == 0 || selectedTab == 1) && !isSelectionMode && currentFolder == null,
+                                    onClick = onNavigateToDownloadLink
+                                )
+                            }
+
                             Box(Modifier.align(Alignment.BottomCenter)) {
                                 StatusBottomBar(selectedTab = selectedTab, tabs = tabs, onTabSelected = { selectedTab = it })
                             }
@@ -316,16 +361,14 @@ fun HomeScreen(
                         mediaList = filteredDownloadedList, 
                         onClose = { 
                             selectedMedia = null
-                            downloadedList = FileUtils.getDownloadedMedia(context)
-                            favorites = getFavorites(context)
+                            scope.launch { loadData(true) }
                         }, 
                         onDelete = { deleteUri -> 
                             scope.launch { 
                                 withContext(Dispatchers.IO) { 
                                     try { context.contentResolver.delete(deleteUri, null, null) } catch (e: Exception) {} 
+                                    loadData(true)
                                 }
-                                downloadedList = FileUtils.getDownloadedMedia(context)
-                                favorites = getFavorites(context)
                                 selectedMedia = null
                             }
                         }
@@ -364,6 +407,10 @@ fun HomeTabContent(
     videoList: List<Uri>,
     downloadedList: List<Uri>,
     filteredDownloadedList: List<Uri>,
+    downloadedImages: List<Uri>,
+    downloadedVideos: List<Uri>,
+    downloadedAudios: List<Uri>,
+    downloadedFavorites: List<Uri>,
     favorites: Set<String>,
     selectedItems: Set<Uri>,
     isSelectionMode: Boolean,
@@ -371,14 +418,19 @@ fun HomeTabContent(
     onSelectionChange: (Set<Uri>) -> Unit,
     onDeleteSingle: (Uri) -> Unit = {}
 ) {
-    val context = LocalContext.current
     AnimatedContent(targetState = selectedTab, label = "tab_anim") { targetTab ->
         when (targetTab) {
             0 -> if (imageList.isEmpty()) EmptyStateContent("No statuses found.", "Please watch some statuses on WhatsApp first.") else MediaGrid(mediaList = imageList, selectedItems = selectedItems, onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) }, onItemLongClick = { onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) })
             1 -> if (videoList.isEmpty()) EmptyStateContent("No videos found.", "Please watch some statuses on WhatsApp first.") else MediaGrid(mediaList = videoList, selectedItems = selectedItems, onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) }, onItemLongClick = { onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) })
             2 -> {
                 if (currentFolder == null) {
-                    DownloadsFolderGrid(downloadedList, favorites, onFolderSelected)
+                    DownloadsFolderGrid(
+                        imageCount = downloadedImages.size,
+                        videoCount = downloadedVideos.size,
+                        audioCount = downloadedAudios.size,
+                        favCount = downloadedFavorites.size,
+                        onFolderSelected = onFolderSelected
+                    )
                 } else {
                     Column(Modifier.fillMaxSize()) {
                         if (filteredDownloadedList.isEmpty()) {
@@ -509,16 +561,18 @@ private fun getAudioDisplayName(context: Context, uri: Uri): String {
 }
 
 @Composable
-fun DownloadsFolderGrid(downloadedList: List<Uri>, favorites: Set<String>, onFolderSelected: (String) -> Unit) {
-    val context = LocalContext.current
+fun DownloadsFolderGrid(
+    imageCount: Int, 
+    videoCount: Int, 
+    audioCount: Int, 
+    favCount: Int, 
+    onFolderSelected: (String) -> Unit
+) {
     val folders = listOf(
-        FolderInfo("Images", Icons.Default.Image, downloadedList.count { context.contentResolver.getType(it)?.startsWith("image") == true }),
-        FolderInfo("Videos", Icons.Default.VideoFile, downloadedList.count { context.contentResolver.getType(it)?.startsWith("video") == true }),
-        FolderInfo("Audios", Icons.Default.MusicNote, downloadedList.count { 
-            val type = context.contentResolver.getType(it) ?: ""
-            type.startsWith("audio") || it.toString().lowercase().let { s -> s.contains(".mp3") || s.contains(".m4a") }
-        }),
-        FolderInfo("Favorites", Icons.Default.Favorite, downloadedList.count { favorites.contains(it.toString()) })
+        FolderInfo("Images", Icons.Default.Image, imageCount),
+        FolderInfo("Videos", Icons.Default.VideoFile, videoCount),
+        FolderInfo("Audios", Icons.Default.MusicNote, audioCount),
+        FolderInfo("Favorites", Icons.Default.Favorite, favCount)
     )
     Column(
         Modifier
@@ -677,11 +731,11 @@ fun PermissionRequiredContent(onGrantClick: () -> Unit) {
 fun EmptyStateContent(title: String, subtitle: String) {
     val context = LocalContext.current
     val themePref = getAppTheme(context)
-    val systemInDark = isSystemInDarkTheme()
+    val systemInDarkTheme = isSystemInDarkTheme()
     val isDark = when (themePref) {
         THEME_LIGHT -> false
         THEME_DARK -> true
-        else -> systemInDark
+        else -> systemInDarkTheme
     }
     val illustration = if (isDark) R.drawable.no_status_found_dark else R.drawable.no_status_found_light
     Column(Modifier

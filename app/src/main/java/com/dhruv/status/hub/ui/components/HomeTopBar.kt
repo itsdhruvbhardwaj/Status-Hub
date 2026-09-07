@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.sp
  * @param onBackClick Optional callback for a back navigation icon.
  * @param onSettingsClick Callback for the settings icon button.
  * @param onDeleteClick Callback for the delete icon button.
+ * @param onSelectAll Callback for the select all icon button.
  * @param onClearSelection Callback to clear current selection.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +43,7 @@ fun HomeTopBar(
     onBackClick: (() -> Unit)? = null,
     onSettingsClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    onSelectAll: (() -> Unit)? = null,
     onClearSelection: () -> Unit = {}
 ) {
     Surface(shadowElevation = 4.dp) {
@@ -73,6 +76,11 @@ fun HomeTopBar(
             },
             actions = {
                 if (isSelectionMode) {
+                    if (onSelectAll != null) {
+                        IconButton(onClick = onSelectAll) {
+                            Icon(Icons.Default.SelectAll, contentDescription = "Select All")
+                        }
+                    }
                     IconButton(onClick = onDeleteClick) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete")
                     }

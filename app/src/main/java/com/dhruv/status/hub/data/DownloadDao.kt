@@ -29,6 +29,9 @@ interface DownloadDao {
     @Query("SELECT * FROM download_records WHERE sourceUrl = :url LIMIT 1")
     suspend fun getRecordByUrl(url: String): DownloadRecord?
 
+    @Query("SELECT * FROM download_records WHERE fileUri = :uri LIMIT 1")
+    suspend fun getRecordByUri(uri: String): DownloadRecord?
+
     @Query("SELECT COUNT(*) FROM download_records WHERE status = :status")
     suspend fun getCountByStatus(status: String): Int
 

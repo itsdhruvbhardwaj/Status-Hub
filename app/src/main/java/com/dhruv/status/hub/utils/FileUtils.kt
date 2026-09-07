@@ -14,8 +14,8 @@ import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.documentfile.provider.DocumentFile
+import com.dhruv.status.hub.data.DownloadRecord
 import java.io.File
-import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
 /**
@@ -375,17 +375,94 @@ object FileUtils {
         val selectionArgs = arrayOf("%StatusHub%")
 
         fun query(collection: Uri) {
-            context.contentResolver.query(collection, projection, selection, selectionArgs, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                while (cursor.moveToNext()) {
-                    mediaList.add(Uri.withAppendedPath(collection, cursor.getLong(idCol).toString()))
+            try {
+                context.contentResolver.query(collection, projection, selection, selectionArgs, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    while (cursor.moveToNext()) {
+                        mediaList.add(Uri.withAppendedPath(collection, cursor.getLong(idCol).toString()))
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Query failed for $collection", e)
             }
         }
 
         query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
         query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
         query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            query(MediaStore.Downloads.EXTERNAL_CONTENT_URI)
+        }
         return mediaList
+    }
+
+    /**
+     * Scans MediaStore for files in StatusHub directories and returns them as DownloadRecords.
+     */
+    fun getDownloadedMediaRecords(context: Context): List<DownloadRecord> {
+        val records = mutableListOf<DownloadRecord>()
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.MIME_TYPE
+        )
+        
+        val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+        } else {
+            "${MediaStore.MediaColumns.DATA} LIKE ?"
+        }
+        val selectionArgs = arrayOf("%StatusHub%")
+
+        fun query(collection: Uri) {
+            try {
+                context.contentResolver.query(collection, projection, selection, selectionArgs, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
+                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+                    val dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
+                    val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
+
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idCol)
+                        val name = cursor.getString(nameCol) ?: "Unknown"
+                        val size = cursor.getLong(sizeCol)
+                        val date = cursor.getLong(dateCol) * 1000 // Convert to millis
+                        val mime = cursor.getString(mimeCol) ?: "unknown"
+                        val uri = Uri.withAppendedPath(collection, id.toString())
+
+                        val extension = name.substringAfterLast(".", "")
+                        
+                        records.add(
+                            DownloadRecord(
+                                sourceUrl = "Recovered",
+                                fileUri = uri.toString(),
+                                fileName = name,
+                                mediaType = if (mime.startsWith("video")) "video" else if (mime.startsWith("audio")) "audio" else "image",
+                                format = extension,
+                                totalBytes = size,
+                                downloadedBytes = size,
+                                timestamp = date,
+                                platform = "Internal",
+                                status = "COMPLETED"
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Sync query failed for $collection", e)
+            }
+        }
+
+        query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+        query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+        query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            query(MediaStore.Downloads.EXTERNAL_CONTENT_URI)
+        }
+        
+        return records
     }
 }

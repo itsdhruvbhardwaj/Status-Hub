@@ -46,6 +46,11 @@ fun RecentDownloadsScreen(
     val context = LocalContext.current
     val allDownloads by viewModel.allDownloads.collectAsState()
     
+    // Trigger sync when screen opens
+    LaunchedEffect(Unit) {
+        viewModel.syncOfflineFiles(context)
+    }
+    
     // Only show completed downloads
     val completedDownloads = allDownloads.filter { it.status == "COMPLETED" }
     
@@ -88,8 +93,20 @@ fun RecentDownloadsScreen(
                     },
                     actions = {
                         if (isSelectionMode) {
+                            IconButton(onClick = {
+                                selectedItems = completedDownloads.toSet()
+                            }) {
+                                Icon(Icons.Default.SelectAll, contentDescription = "Select All")
+                            }
                             IconButton(onClick = { showDeleteDialog = selectedItems.toList() }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
+                            }
+                        } else {
+                            IconButton(onClick = {
+                                viewModel.syncOfflineFiles(context)
+                                Toast.makeText(context, "Scanning for old downloads...", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Scan for files")
                             }
                         }
                     },
