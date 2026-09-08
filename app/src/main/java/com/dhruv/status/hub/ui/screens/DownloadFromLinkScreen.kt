@@ -54,10 +54,10 @@ fun DownloadFromLinkScreen(
     val context = LocalContext.current
     var url by remember { mutableStateOf(initialUrl ?: "") }
     val downloadState by viewModel.downloadState.collectAsState()
-    
+
     val allDownloads by viewModel.allDownloads.collectAsState()
     val speeds by DownloadManager.downloadSpeeds.collectAsState()
-    
+
     // Updated filter to include PROCESSING so the item stays visible while merging
     val activeDownloads = allDownloads.filter { it.status in listOf("QUEUED", "DOWNLOADING", "PAUSED", "FAILED", "PROCESSING") }
     val recentCompleted = allDownloads.filter { it.status == "COMPLETED" }.take(5)
@@ -81,9 +81,9 @@ fun DownloadFromLinkScreen(
         }
     }
 
-    BackHandler { 
+    BackHandler {
         viewModel.resetState()
-        onBack() 
+        onBack()
     }
 
     Scaffold(
@@ -174,7 +174,7 @@ fun DownloadFromLinkScreen(
                             modifier = Modifier.weight(1f).height(50.dp),
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer, 
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                             )
                         ) {
@@ -205,7 +205,7 @@ fun DownloadFromLinkScreen(
                 // Section 2: Analysis Result
                 item {
                     AnimatedContent(
-                        targetState = downloadState, 
+                        targetState = downloadState,
                         label = "download_state",
                         transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) }
                     ) { state ->
@@ -221,7 +221,7 @@ fun DownloadFromLinkScreen(
                                     Text("Analyzing link...")
                                 }
                             }
-                            
+
                             is NetworkDownloadUtils.DownloadState.Analyzed -> {
                                 MediaInfoCard(
                                     info = state.info,
@@ -246,7 +246,7 @@ fun DownloadFromLinkScreen(
                                     Spacer(modifier = Modifier.height(28.dp))
                                 }
                             }
-                            
+
                             else -> {}
                         }
                     }

@@ -408,7 +408,7 @@ object FileUtils {
             MediaStore.MediaColumns.DATE_ADDED,
             MediaStore.MediaColumns.MIME_TYPE
         )
-        
+
         val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
         } else {
@@ -434,7 +434,7 @@ object FileUtils {
                         val uri = Uri.withAppendedPath(collection, id.toString())
 
                         val extension = name.substringAfterLast(".", "")
-                        
+
                         records.add(
                             DownloadRecord(
                                 sourceUrl = "Recovered",
@@ -462,7 +462,7 @@ object FileUtils {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             query(MediaStore.Downloads.EXTERNAL_CONTENT_URI)
         }
-        
+
         return records
     }
 }

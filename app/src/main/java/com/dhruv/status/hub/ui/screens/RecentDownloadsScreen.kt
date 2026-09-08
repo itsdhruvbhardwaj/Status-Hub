@@ -32,7 +32,7 @@ import java.util.*
 
 /**
  * RecentDownloadsScreen
- * 
+ *
  * Displays already downloaded files.
  * Fixed header color (primaryContainer), removed top spacing,
  * and added hold-to-select multi-deletion with a clear selection cross icon.
@@ -45,15 +45,15 @@ fun RecentDownloadsScreen(
 ) {
     val context = LocalContext.current
     val allDownloads by viewModel.allDownloads.collectAsState()
-    
+
     // Trigger sync when screen opens
     LaunchedEffect(Unit) {
         viewModel.syncOfflineFiles(context)
     }
-    
+
     // Only show completed downloads
     val completedDownloads = allDownloads.filter { it.status == "COMPLETED" }
-    
+
     // Multi-selection state
     var selectedItems by remember { mutableStateOf(setOf<DownloadRecord>()) }
     val isSelectionMode = selectedItems.isNotEmpty()
@@ -156,11 +156,11 @@ fun RecentDownloadsScreen(
                                     record = record,
                                     isSelected = isSelected,
                                     isSelectionMode = isSelectionMode,
-                                    onOpen = { 
+                                    onOpen = {
                                         if (isSelectionMode) {
                                             selectedItems = if (isSelected) selectedItems - record else selectedItems + record
                                         } else {
-                                            openFile(context, record.fileUri ?: "") 
+                                            openFile(context, record.fileUri ?: "")
                                         }
                                     },
                                     onLongClick = {
@@ -227,15 +227,15 @@ private fun EmptyHistoryContent(modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                imageVector = Icons.Default.Download, 
-                contentDescription = null, 
-                modifier = Modifier.size(64.dp), 
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
                 tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "No downloads found", 
-                color = MaterialTheme.colorScheme.outline, 
+                text = "No downloads found",
+                color = MaterialTheme.colorScheme.outline,
                 fontWeight = FontWeight.Medium
             )
         }
@@ -243,11 +243,11 @@ private fun EmptyHistoryContent(modifier: Modifier = Modifier) {
 }
 
 private fun groupHistory(records: List<DownloadRecord>): Map<String, List<DownloadRecord>> {
-    val today = Calendar.getInstance().apply { 
+    val today = Calendar.getInstance().apply {
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0) 
+        set(Calendar.MILLISECOND, 0)
     }.timeInMillis
     val yesterday = today - DateUtils.DAY_IN_MILLIS
 

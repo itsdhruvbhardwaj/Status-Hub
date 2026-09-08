@@ -14,7 +14,7 @@ val IndigoGrey80 = Color(0xFFBEC6DC)
 val IndigoPink80 = Color(0xFFDEBCDF)
 
 // Indigo Light Palette (for light mode surfaces and accents)
-val Indigo40 = Color(0xFF3458A2)
+val Indigo40 = Color(0xFF2C67C5)
 val IndigoGrey40 = Color(0xFF585E71)
 val IndigoPink40 = Color(0xFF735776)
 
