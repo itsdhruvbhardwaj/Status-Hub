@@ -47,9 +47,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dhruv.status.hub.BuildConfig
 import com.dhruv.status.hub.R
+import com.dhruv.status.hub.data.DownloadRecord
 import com.dhruv.status.hub.ui.components.*
+import com.dhruv.status.hub.ui.viewmodels.DownloadViewModel
 import com.dhruv.status.hub.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -62,7 +65,8 @@ import kotlinx.coroutines.withContext
 fun HomeScreen(
     onThemeChange: () -> Unit = {},
     onNavigateToDownloadLink: () -> Unit = {},
-    onNavigateToRecentDownloads: () -> Unit = {}
+    onNavigateToRecentDownloads: () -> Unit = {},
+    viewModel: DownloadViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -80,14 +84,26 @@ fun HomeScreen(
 
     var imageList by remember { mutableStateOf(listOf<Uri>()) }
     var videoList by remember { mutableStateOf(listOf<Uri>()) }
-    var downloadedList by remember { mutableStateOf(listOf<Uri>()) }
     var favorites by remember { mutableStateOf(setOf<String>()) }
 
-    // Optimization: Categorized lists loaded in background to prevent 3-second delay
-    var downloadedImages by remember { mutableStateOf(listOf<Uri>()) }
-    var downloadedVideos by remember { mutableStateOf(listOf<Uri>()) }
-    var downloadedAudios by remember { mutableStateOf(listOf<Uri>()) }
-    var downloadedFavorites by remember { mutableStateOf(listOf<Uri>()) }
+    // Observe downloads from database instead of scanning disk
+    val allDownloads by viewModel.allDownloads.collectAsState()
+    
+    val downloadedList = remember(allDownloads) { 
+        allDownloads.filter { it.status == "COMPLETED" && it.fileUri != null }.map { Uri.parse(it.fileUri!!) } 
+    }
+    val downloadedImages = remember(allDownloads) { 
+        allDownloads.filter { it.status == "COMPLETED" && it.fileUri != null && it.mediaType == "image" }.map { Uri.parse(it.fileUri!!) } 
+    }
+    val downloadedVideos = remember(allDownloads) { 
+        allDownloads.filter { it.status == "COMPLETED" && it.fileUri != null && it.mediaType == "video" }.map { Uri.parse(it.fileUri!!) } 
+    }
+    val downloadedAudios = remember(allDownloads) { 
+        allDownloads.filter { it.status == "COMPLETED" && it.fileUri != null && it.mediaType == "audio" }.map { Uri.parse(it.fileUri!!) } 
+    }
+    val downloadedFavorites = remember(allDownloads, favorites) { 
+        allDownloads.filter { it.status == "COMPLETED" && it.fileUri != null && favorites.contains(it.fileUri) }.map { Uri.parse(it.fileUri!!) } 
+    }
 
     var isRefreshing by remember { mutableStateOf(false) }
     var isLoadingFirstTime by remember { mutableStateOf(false) }
@@ -99,7 +115,6 @@ fun HomeScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPermissionInfoDialog by remember { mutableStateOf(false) }
 
-    // Logic to select the pre-filtered list based on current folder
     val filteredDownloadedList = remember(currentFolder, downloadedList, downloadedImages, downloadedVideos, downloadedAudios, downloadedFavorites) {
         when (currentFolder) {
             "Images" -> downloadedImages
@@ -110,12 +125,10 @@ fun HomeScreen(
         }
     }
 
-    // Clear selection when folder or tab changes
     LaunchedEffect(selectedTab, currentFolder) {
         selectedItems.value = emptySet()
     }
 
-    // Preload ad on screen start
     LaunchedEffect(Unit) { 
         AdsManager.loadInterstitial(context) 
     }
@@ -176,24 +189,9 @@ fun HomeScreen(
                     }
                 }
                 
-                // Fetch and categorize downloads in background
-                val downloaded = FileUtils.getDownloadedMedia(context)
                 val favs = getFavorites(context)
-                val dImages = downloaded.filter { context.contentResolver.getType(it)?.startsWith("image") == true }
-                val dVideos = downloaded.filter { context.contentResolver.getType(it)?.startsWith("video") == true }
-                val dAudios = downloaded.filter { 
-                    val type = context.contentResolver.getType(it) ?: ""
-                    type.startsWith("audio") || it.toString().lowercase().let { s -> s.contains(".mp3") || s.contains(".m4a") }
-                }
-                val dFavs = downloaded.filter { favs.contains(it.toString()) }
-
                 withContext(Dispatchers.Main) {
-                    downloadedList = downloaded
                     favorites = favs
-                    downloadedImages = dImages
-                    downloadedVideos = dVideos
-                    downloadedAudios = dAudios
-                    downloadedFavorites = dFavs
                 }
             } catch (e: Exception) { e.printStackTrace() }
             withContext(Dispatchers.Main) { isLoadingFirstTime = false }
@@ -219,7 +217,14 @@ fun HomeScreen(
         scope.launch {
             withContext(Dispatchers.IO) {
                 selectedItems.value.forEach { uri ->
-                    try { context.contentResolver.delete(uri, null, null) } catch (e: Exception) {}
+                    // For downloads, delete from database and storage
+                    val record = allDownloads.find { it.fileUri == uri.toString() }
+                    if (record != null) {
+                        viewModel.deleteFileAndRecord(context, record)
+                    } else {
+                        // For statuses (read-only usually, but just in case)
+                        try { context.contentResolver.delete(uri, null, null) } catch (e: Exception) {}
+                    }
                 }
                 loadData(true)
             }
@@ -245,10 +250,15 @@ fun HomeScreen(
             drawerContent = {
                 HomeDrawerContent(
                     selectedTab = selectedTab,
+                    currentFolder = currentFolder,
                     onHomeClick = { scope.launch { drawerState.close() }; selectedTab = 0 },
                     onDownloadLinkClick = { scope.launch { drawerState.close() }; onNavigateToDownloadLink() },
                     onRecentDownloadsClick = { scope.launch { drawerState.close() }; onNavigateToRecentDownloads() },
-                    onDownloadsClick = { scope.launch { drawerState.close() }; selectedTab = 2; currentFolder = null },
+                    onDownloadsClick = { folder -> 
+                        scope.launch { drawerState.close() }
+                        selectedTab = 2
+                        currentFolder = folder
+                    },
                     onFavoritesClick = { scope.launch { drawerState.close() }; selectedTab = 2; currentFolder = "Favorites" },
                     onSettingsClick = { scope.launch { drawerState.close() }; showSettings = true },
                     onHelpClick = { scope.launch { drawerState.close() }; showPermissionInfoDialog = true }
@@ -312,6 +322,7 @@ fun HomeScreen(
                                     downloadedAudios = downloadedAudios,
                                     downloadedFavorites = downloadedFavorites,
                                     favorites = favorites,
+                                    allDownloads = allDownloads,
                                     selectedItems = selectedItems.value,
                                     isSelectionMode = isSelectionMode,
                                     onMediaClick = { uri ->
@@ -330,7 +341,6 @@ fun HomeScreen(
                                 )
                             }
                             
-                            // Download from Link FAB component
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -365,8 +375,10 @@ fun HomeScreen(
                         }, 
                         onDelete = { deleteUri -> 
                             scope.launch { 
+                                val record = allDownloads.find { it.fileUri == deleteUri.toString() }
                                 withContext(Dispatchers.IO) { 
-                                    try { context.contentResolver.delete(deleteUri, null, null) } catch (e: Exception) {} 
+                                    if (record != null) viewModel.deleteFileAndRecord(context, record)
+                                    else try { context.contentResolver.delete(deleteUri, null, null) } catch (e: Exception) {} 
                                     loadData(true)
                                 }
                                 selectedMedia = null
@@ -412,6 +424,7 @@ fun HomeTabContent(
     downloadedAudios: List<Uri>,
     downloadedFavorites: List<Uri>,
     favorites: Set<String>,
+    allDownloads: List<DownloadRecord>,
     selectedItems: Set<Uri>,
     isSelectionMode: Boolean,
     onMediaClick: (Uri) -> Unit,
@@ -439,6 +452,7 @@ fun HomeTabContent(
                             if (currentFolder == "Audios") {
                                 AudioRowList(
                                     audioList = filteredDownloadedList, 
+                                    allDownloads = allDownloads,
                                     selectedItems = selectedItems,
                                     isSelectionMode = isSelectionMode,
                                     onItemClick = { if (isSelectionMode) onSelectionChange(if (selectedItems.contains(it)) selectedItems - it else selectedItems + it) else onMediaClick(it) },
@@ -460,6 +474,7 @@ fun HomeTabContent(
 @Composable
 fun AudioRowList(
     audioList: List<Uri>, 
+    allDownloads: List<DownloadRecord>,
     selectedItems: Set<Uri>,
     isSelectionMode: Boolean,
     onItemClick: (Uri) -> Unit,
@@ -467,97 +482,32 @@ fun AudioRowList(
     onDeleteClick: (Uri) -> Unit = {}
 ) {
     val context = LocalContext.current
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp, top = 0.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(), 
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 80.dp)
+    ) {
         items(audioList, key = { it.toString() }) { uri ->
-            val fileName = remember(uri) { getAudioDisplayName(context, uri) }
-            val isSelected = selectedItems.contains(uri)
-            
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 3.dp)
-                    .combinedClickable(
-                        onClick = { onItemClick(uri) },
-                        onLongClick = { onItemLongClick(uri) }
-                    ),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 0.dp else 1.dp),
-                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) else null
-            ) {
-                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), 
-                        shape = RoundedCornerShape(10.dp), 
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            if (isSelected) {
-                                Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                            } else {
-                                Icon(imageVector = Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                            }
+            val record = remember(uri, allDownloads) { allDownloads.find { it.fileUri == uri.toString() } }
+            if (record != null) {
+                HistoryItem(
+                    record = record,
+                    isSelected = selectedItems.contains(uri),
+                    isSelectionMode = isSelectionMode,
+                    onOpen = { onItemClick(uri) },
+                    onLongClick = { onItemLongClick(uri) },
+                    onShare = {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "audio/*"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = fileName, 
-                            maxLines = 1, 
-                            overflow = TextOverflow.Ellipsis, 
-                            fontWeight = FontWeight.Bold, 
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 14.sp
-                        )
-                    }
-                    
-                    if (isSelectionMode) {
-                        Checkbox(
-                            checked = isSelected,
-                            onCheckedChange = { onItemClick(uri) },
-                            modifier = Modifier.size(20.dp)
-                        )
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { 
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "audio/*"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share Audio"))
-                            }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Outlined.Share, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
-                            }
-                            IconButton(onClick = { onDeleteClick(uri) }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
-                            }
-                            IconButton(onClick = { onItemClick(uri) }, modifier = Modifier.size(32.dp)) {
-                                Icon(imageVector = Icons.Default.PlayCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                            }
-                        }
-                    }
-                }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share Audio"))
+                    },
+                    onDelete = { onDeleteClick(uri) }
+                )
             }
         }
     }
-}
-
-private fun getAudioDisplayName(context: Context, uri: Uri): String {
-    var name = "Unknown Audio"
-    try {
-        context.contentResolver.query(uri, arrayOf(MediaStore.Audio.Media.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                name = cursor.getString(0) ?: "Unknown Audio"
-            }
-        }
-        if (name == "Unknown Audio") {
-            name = DocumentFile.fromSingleUri(context, uri)?.name ?: "Status_Audio"
-        }
-    } catch (e: Exception) { name = "Status_Audio" }
-    return name
 }
 
 @Composable
@@ -580,7 +530,7 @@ fun DownloadsFolderGrid(
             .padding(horizontal = 12.dp, vertical = 0.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(16.dp))
         folders.chunked(2).forEach { rowFolders ->
             Row(
                 modifier = Modifier
@@ -666,10 +616,11 @@ data class FolderInfo(val name: String, val icon: ImageVector, val count: Int)
 @Composable
 fun HomeDrawerContent(
     selectedTab: Int,
+    currentFolder: String?,
     onHomeClick: () -> Unit,
     onDownloadLinkClick: () -> Unit,
     onRecentDownloadsClick: () -> Unit,
-    onDownloadsClick: () -> Unit,
+    onDownloadsClick: (String?) -> Unit,
     onFavoritesClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onHelpClick: () -> Unit
@@ -683,10 +634,10 @@ fun HomeDrawerContent(
             NavigationDrawerItem(label = { Text("Home") }, selected = selectedTab != 2, onClick = onHomeClick, icon = { Icon(Icons.Default.Home, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
             NavigationDrawerItem(label = { Text("Download from Link") }, selected = false, onClick = onDownloadLinkClick, icon = { Icon(Icons.Default.Link, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
             NavigationDrawerItem(label = { Text("Recent Downloads") }, selected = false, onClick = onRecentDownloadsClick, icon = { Icon(Icons.Default.History, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
-            NavigationDrawerItem(label = { Text("Saved Images") }, selected = false, onClick = onDownloadsClick, icon = { Icon(Icons.Default.Image, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
-            NavigationDrawerItem(label = { Text("Saved Videos") }, selected = false, onClick = onDownloadsClick, icon = { Icon(Icons.Default.VideoFile, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
-            NavigationDrawerItem(label = { Text("Saved Audios") }, selected = false, onClick = onDownloadsClick, icon = { Icon(Icons.Default.MusicNote, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
-            NavigationDrawerItem(label = { Text("Favorites") }, selected = false, onClick = onFavoritesClick, icon = { Icon(Icons.Default.Favorite, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
+            NavigationDrawerItem(label = { Text("Saved Images") }, selected = selectedTab == 2 && currentFolder == "Images", onClick = { onDownloadsClick("Images") }, icon = { Icon(Icons.Default.Image, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
+            NavigationDrawerItem(label = { Text("Saved Videos") }, selected = selectedTab == 2 && currentFolder == "Videos", onClick = { onDownloadsClick("Videos") }, icon = { Icon(Icons.Default.VideoFile, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
+            NavigationDrawerItem(label = { Text("Saved Audios") }, selected = selectedTab == 2 && currentFolder == "Audios", onClick = { onDownloadsClick("Audios") }, icon = { Icon(Icons.Default.MusicNote, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
+            NavigationDrawerItem(label = { Text("Favorites") }, selected = selectedTab == 2 && currentFolder == "Favorites", onClick = onFavoritesClick, icon = { Icon(Icons.Default.Favorite, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
             HorizontalDivider(Modifier.padding(vertical = 16.dp, horizontal = 24.dp))
             NavigationDrawerItem(label = { Text("Settings") }, selected = false, onClick = onSettingsClick, icon = { Icon(Icons.Default.Settings, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))
             NavigationDrawerItem(label = { Text("Help & FAQ") }, selected = false, onClick = onHelpClick, icon = { Icon(Icons.Default.Help, null) }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding))

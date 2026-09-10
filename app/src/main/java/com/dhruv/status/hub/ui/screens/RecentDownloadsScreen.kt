@@ -41,15 +41,11 @@ import java.util.*
 @Composable
 fun RecentDownloadsScreen(
     onBack: () -> Unit,
+    onThemeChange: () -> Unit = {},
     viewModel: DownloadViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val allDownloads by viewModel.allDownloads.collectAsState()
-
-    // Trigger sync when screen opens
-    LaunchedEffect(Unit) {
-        viewModel.syncOfflineFiles(context)
-    }
 
     // Only show completed downloads
     val completedDownloads = allDownloads.filter { it.status == "COMPLETED" }
@@ -59,166 +55,170 @@ fun RecentDownloadsScreen(
     val isSelectionMode = selectedItems.isNotEmpty()
 
     var showDeleteDialog by remember { mutableStateOf<List<DownloadRecord>?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
 
     // Intercept back button if in selection mode to clear it
-    BackHandler(isSelectionMode) {
-        selectedItems = emptySet()
+    BackHandler(isSelectionMode || showSettings) {
+        if (showSettings) showSettings = false
+        else if (isSelectionMode) selectedItems = emptySet()
+        else onBack()
     }
 
-    Scaffold(
-        topBar = {
-            Surface(shadowElevation = 4.dp) {
-                TopAppBar(
-                    title = {
-                        if (isSelectionMode) {
-                            Text("${selectedItems.size} Selected", fontWeight = FontWeight.Bold)
-                        } else {
-                            Text(
-                                text = "Downloads",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 24.sp
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            if (isSelectionMode) selectedItems = emptySet()
-                            else onBack()
-                        }) {
-                            Icon(
-                                imageVector = if (isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = if (isSelectionMode) "Clear Selection" else "Back"
-                            )
-                        }
-                    },
-                    actions = {
-                        if (isSelectionMode) {
-                            IconButton(onClick = {
-                                selectedItems = completedDownloads.toSet()
-                            }) {
-                                Icon(Icons.Default.SelectAll, contentDescription = "Select All")
-                            }
-                            IconButton(onClick = { showDeleteDialog = selectedItems.toList() }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
-                            }
-                        } else {
-                            IconButton(onClick = {
-                                viewModel.syncOfflineFiles(context)
-                                Toast.makeText(context, "Scanning for old downloads...", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Scan for files")
-                            }
-                        }
-                    },
-                    // Changed to primaryContainer to match the Home screen header style
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
-            }
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-        ) {
-            Box(modifier = Modifier.weight(1f)) {
-                if (completedDownloads.isEmpty()) {
-                    EmptyHistoryContent(modifier = Modifier.fillMaxSize())
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background),
-                        // Top padding is 0 to remove space before the first date header
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 0.dp)
-                    ) {
-                        // Group downloads by date (Today, Yesterday, etc.)
-                        val grouped = groupHistory(completedDownloads)
-                        grouped.forEach { (section, records) ->
-                            item {
+    if (showSettings) {
+        SettingsScreen(
+            onBack = { showSettings = false },
+            onThemeChange = onThemeChange,
+            onHelpClick = { showSettings = false }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                Surface(shadowElevation = 4.dp) {
+                    TopAppBar(
+                        title = {
+                            if (isSelectionMode) {
+                                Text("${selectedItems.size} Selected", fontWeight = FontWeight.Bold)
+                            } else {
                                 Text(
-                                    text = section,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    // Minimized padding to pull it closer to the TopAppBar
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                                    text = "Downloads",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 24.sp
                                 )
                             }
-                            items(records, key = { it.id }) { record ->
-                                val isSelected = selectedItems.contains(record)
-                                HistoryItem(
-                                    record = record,
-                                    isSelected = isSelected,
-                                    isSelectionMode = isSelectionMode,
-                                    onOpen = {
-                                        if (isSelectionMode) {
-                                            selectedItems = if (isSelected) selectedItems - record else selectedItems + record
-                                        } else {
-                                            openFile(context, record.fileUri ?: "")
-                                        }
-                                    },
-                                    onLongClick = {
-                                        if (!isSelectionMode) {
-                                            selectedItems = setOf(record)
-                                        } else {
-                                            selectedItems = if (isSelected) selectedItems - record else selectedItems + record
-                                        }
-                                    },
-                                    onShare = { shareFile(context, record.fileUri ?: "") },
-                                    onDelete = { showDeleteDialog = listOf(record) }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                if (isSelectionMode) selectedItems = emptySet()
+                                else onBack()
+                            }) {
+                                Icon(
+                                    imageVector = if (isSelectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = if (isSelectionMode) "Clear Selection" else "Back"
                                 )
+                            }
+                        },
+                        actions = {
+                            if (isSelectionMode) {
+                                IconButton(onClick = {
+                                    selectedItems = completedDownloads.toSet()
+                                }) {
+                                    Icon(Icons.Default.SelectAll, contentDescription = "Select All")
+                                }
+                                IconButton(onClick = { showDeleteDialog = selectedItems.toList() }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
+                                }
+                            } else {
+                                IconButton(onClick = { showSettings = true }) {
+                                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                }
+            }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    if (completedDownloads.isEmpty()) {
+                        EmptyHistoryContent(modifier = Modifier.fillMaxSize())
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 0.dp)
+                        ) {
+                            val grouped = groupHistory(completedDownloads)
+                            grouped.forEach { (section, records) ->
+                                item {
+                                    Text(
+                                        text = section,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                                    )
+                                }
+                                items(records, key = { it.id }) { record ->
+                                    val isSelected = selectedItems.contains(record)
+                                    HistoryItem(
+                                        record = record,
+                                        isSelected = isSelected,
+                                        isSelectionMode = isSelectionMode,
+                                        onOpen = {
+                                            if (isSelectionMode) {
+                                                selectedItems = if (isSelected) selectedItems - record else selectedItems + record
+                                            } else {
+                                                openFile(context, record.fileUri ?: "")
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSelectionMode) {
+                                                selectedItems = setOf(record)
+                                            } else {
+                                                selectedItems = if (isSelected) selectedItems - record else selectedItems + record
+                                            }
+                                        },
+                                        onShare = { shareFile(context, record.fileUri ?: "") },
+                                        onDelete = { showDeleteDialog = listOf(record) }
+                                    )
+                                }
                             }
                         }
                     }
                 }
+                AdBanner()
             }
-            AdBanner()
         }
-    }
 
-    showDeleteDialog?.let { recordsToDelete ->
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            title = { Text(if (recordsToDelete.size > 1) "Delete ${recordsToDelete.size} Items" else "Delete Download", fontWeight = FontWeight.Bold) },
-            text = { Text(if (recordsToDelete.size > 1) "Are you sure you want to delete these items?" else "Would you like to delete only the history record or also delete the file '${recordsToDelete[0].fileName}' from your device?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        recordsToDelete.forEach { viewModel.deleteFileAndRecord(context, it) }
-                        selectedItems = emptySet()
-                        showDeleteDialog = null
-                        Toast.makeText(context, "${recordsToDelete.size} items deleted", Toast.LENGTH_SHORT).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Text("Delete Files & History")
-                }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = { showDeleteDialog = null }) {
-                        Text("Cancel")
-                    }
-                    TextButton(
+        showDeleteDialog?.let { recordsToDelete ->
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = null },
+                title = { Text(if (recordsToDelete.size > 1) "Delete ${recordsToDelete.size} Items" else "Delete Download", fontWeight = FontWeight.Bold) },
+                text = { Text(if (recordsToDelete.size > 1) "Are you sure you want to delete these items?" else "Would you like to delete only the history record or also delete the file '${recordsToDelete[0].fileName}' from your device?") },
+                confirmButton = {
+                    Button(
                         onClick = {
-                            recordsToDelete.forEach { viewModel.deleteRecord(it) }
+                            recordsToDelete.forEach { viewModel.deleteFileAndRecord(context, it) }
                             selectedItems = emptySet()
                             showDeleteDialog = null
-                            Toast.makeText(context, "Records removed from history", Toast.LENGTH_SHORT).show()
-                        }
+                            Toast.makeText(context, "${recordsToDelete.size} items deleted", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(50)
                     ) {
-                        Text("Remove from History")
+                        Text("Delete Files & History")
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = { showDeleteDialog = null }) {
+                            Text("Cancel")
+                        }
+                        TextButton(
+                            onClick = {
+                                recordsToDelete.forEach { viewModel.deleteRecord(it) }
+                                selectedItems = emptySet()
+                                showDeleteDialog = null
+                                Toast.makeText(context, "Records removed from history", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text("Remove from History")
+                        }
                     }
                 }
-            }
-        )
+            )
+        }
     }
 }
 

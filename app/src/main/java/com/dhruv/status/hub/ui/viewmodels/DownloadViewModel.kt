@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import com.dhruv.status.hub.data.DownloadDatabase
 import com.dhruv.status.hub.data.DownloadRecord
 import com.dhruv.status.hub.utils.DownloadManager
-import com.dhruv.status.hub.utils.FileUtils
 import com.dhruv.status.hub.utils.NetworkDownloadUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,23 +17,28 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * ViewModel for managing the Download from Link feature and History.
- * Restored to original simple download flow.
+ * ViewModel for managing downloads and download history.
  */
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = DownloadDatabase.getDatabase(application)
     private val downloadDao = db.downloadDao()
 
-    private val _downloadState = MutableStateFlow<NetworkDownloadUtils.DownloadState>(NetworkDownloadUtils.DownloadState.Idle)
-    val downloadState: StateFlow<NetworkDownloadUtils.DownloadState> = _downloadState
-
-    val allDownloads: StateFlow<List<DownloadRecord>> = downloadDao.getAllRecords()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
+    private val _downloadState =
+        MutableStateFlow<NetworkDownloadUtils.DownloadState>(
+            NetworkDownloadUtils.DownloadState.Idle
         )
+
+    val downloadState: StateFlow<NetworkDownloadUtils.DownloadState> =
+        _downloadState
+
+    val allDownloads: StateFlow<List<DownloadRecord>> =
+        downloadDao.getAllRecords()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
 
     fun analyzeUrl(url: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -44,34 +48,41 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     * Enqueues a download using the native format extracted from the source.
-     */
     fun enqueueDownload(
         context: Context,
         info: NetworkDownloadUtils.MediaInfo,
         format: NetworkDownloadUtils.MediaFormat?,
         isAudioOnly: Boolean = false
     ) {
-        val extension = format?.extension ?: info.extension
-        val mediaType = if (isAudioOnly || format?.isAudio == true) "audio" else info.mediaType
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val extension = format?.extension ?: info.extension
+                val mediaType = if (isAudioOnly || format?.isAudio == true) "audio" else info.mediaType
+                val downloadUrl = format?.url?.takeIf { it.isNotBlank() } ?: info.url
 
-        val record = DownloadRecord(
-            sourceUrl = info.url,
-            fileName = info.fileName,
-            mediaType = mediaType,
-            format = extension,
-            quality = format?.quality ?: "Default",
-            platform = info.platform,
-            status = "QUEUED",
-            thumbnailUrl = info.thumbnailUrl,
-            downloadUrl = format?.url ?: info.url,
-            dashAudioUrl = format?.dashAudioUrl,
-            totalBytes = format?.size ?: -1L
-        )
+                val record = DownloadRecord(
+                    sourceUrl = info.url,
+                    fileName = info.fileName,
+                    mediaType = mediaType,
+                    format = extension,
+                    quality = format?.quality ?: "Default",
+                    platform = info.platform,
+                    status = "QUEUED",
+                    thumbnailUrl = info.thumbnailUrl,
+                    downloadUrl = downloadUrl,
+                    dashAudioUrl = format?.dashAudioUrl,
+                    totalBytes = format?.size ?: -1L
+                )
 
-        DownloadManager.enqueue(context, record)
-        resetState()
+                DownloadManager.enqueue(context, record)
+                resetState()
+
+            } catch (e: Exception) {
+                _downloadState.value = NetworkDownloadUtils.DownloadState.Error(
+                    e.localizedMessage ?: "Download could not be started."
+                )
+            }
+        }
     }
 
     fun pauseDownload(context: Context, id: Long) = DownloadManager.pause(context, id)
@@ -90,9 +101,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 record.fileUri?.let { uriString ->
                     context.contentResolver.delete(Uri.parse(uriString), null, null)
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
             downloadDao.deleteRecord(record)
         }
     }
@@ -102,17 +111,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Scans MediaStore for StatusHub files and adds missing ones to the database.
+     * Offline sync is disabled to prevent fetching older files from previous installations.
      */
     fun syncOfflineFiles(context: Context) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val mediaRecords = FileUtils.getDownloadedMediaRecords(context)
-            mediaRecords.forEach { record ->
-                val existing = record.fileUri?.let { downloadDao.getRecordByUri(it) }
-                if (existing == null) {
-                    downloadDao.insertRecord(record)
-                }
-            }
-        }
+        // Disabled: We no longer scan public storage for old "StatusHub" files.
     }
 }

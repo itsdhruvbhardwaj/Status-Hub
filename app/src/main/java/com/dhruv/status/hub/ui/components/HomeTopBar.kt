@@ -12,37 +12,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * HomeTopBar Composable
- * 
- * The top app bar for the main screen. It adapts its content based on whether
- * the user is in "Selection Mode" or viewing a specific folder.
- * 
- * @param title The title to display.
- * @param isSelectionMode Whether multi-selection is active.
- * @param selectedCount The number of items currently selected.
- * @param onMenuClick Callback for the hamburger menu icon.
- * @param onBackClick Optional callback for a back navigation icon.
- * @param onSettingsClick Callback for the settings icon button.
- * @param onDeleteClick Callback for the delete icon button.
- * @param onSelectAll Callback for the select all icon button.
- * @param onClearSelection Callback to clear current selection.
+ * Standardized Top App Bar for the application.
+ * Matches Status Hub style with support for subtitles.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeTopBar(
     title: String = "Status Hub",
+    subtitle: String? = null,
     isSelectionMode: Boolean,
     selectedCount: Int,
     onMenuClick: () -> Unit,
     onBackClick: (() -> Unit)? = null,
-    onSettingsClick: () -> Unit,
-    onDeleteClick: () -> Unit,
+    onSettingsClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
     onSelectAll: (() -> Unit)? = null,
     onClearSelection: () -> Unit = {}
 ) {
@@ -52,11 +40,21 @@ fun HomeTopBar(
                 if (isSelectionMode) {
                     Text("$selectedCount Selected", fontWeight = FontWeight.Bold)
                 } else {
-                    Text(
-                        text = title,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 24.sp
-                    )
+                    Column {
+                        Text(
+                            text = "Status Hub",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 24.sp
+                        )
+                        if (subtitle != null) {
+                            Text(
+                                text = subtitle,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
                 }
             },
             navigationIcon = {
@@ -81,14 +79,13 @@ fun HomeTopBar(
                             Icon(Icons.Default.SelectAll, contentDescription = "Select All")
                         }
                     }
-                    IconButton(onClick = onDeleteClick) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete")
+                    if (onDeleteClick != null) {
+                        IconButton(onClick = onDeleteClick) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        }
                     }
-                } else {
-                    IconButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier.size(40.dp)
-                    ) {
+                } else if (onSettingsClick != null) {
+                    IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }

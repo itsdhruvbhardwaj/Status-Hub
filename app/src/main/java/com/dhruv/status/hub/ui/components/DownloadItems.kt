@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,7 +23,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dhruv.status.hub.data.DownloadRecord
+import com.dhruv.status.hub.utils.FileUtils
 
+/**
+ * Modernized ActiveDownloadItem with compact layout and flat design.
+ */
 @Composable
 fun ActiveDownloadItem(
     record: DownloadRecord,
@@ -36,23 +42,21 @@ fun ActiveDownloadItem(
     val isProcessing = record.status == "PROCESSING"
     
     val progress = if (record.totalBytes > 0) record.downloadedBytes.toFloat() / record.totalBytes else 0f
-    // Show 100% explicitly during processing to avoid jumping back
     val percentText = if (isProcessing) "100%" else if (record.totalBytes > 0) "${(progress * 100).toInt()}%" else "..."
     
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isQueued) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = if (isQueued) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) else null
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Thumbnail
                 Box(
-                    modifier = Modifier.size(50.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     if (!record.thumbnailUrl.isNullOrEmpty()) {
@@ -62,137 +66,107 @@ fun ActiveDownloadItem(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                        // Media Type Overlay
-                        Surface(
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (record.mediaType == "audio") Icons.Default.MusicNote else Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.padding(2.dp).size(10.dp),
-                                tint = Color.White
-                            )
-                        }
-                    } else {
+                    }
+                    
+                    // Type Icon Overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.3f)),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
-                            imageVector = if (isQueued) Icons.Default.HourglassEmpty
-                            else if (record.mediaType == "audio") Icons.Default.MusicNote 
-                            else Icons.Default.PlayArrow,
+                            imageVector = if (record.mediaType == "audio") Icons.Default.MusicNote else Icons.Default.PlayArrow,
                             contentDescription = null,
-                            tint = if (isQueued) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
                 
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(record.fileName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
                     Text(
                         text = when {
-                            isQueued -> "Waiting for connection..."
-                            isProcessing -> "Finalizing file..."
+                            isQueued -> "Queued..."
+                            isProcessing -> "Finishing..."
+                            isFailed -> "Failed"
                             else -> "${record.quality} • ${record.format.uppercase()}"
                         },
-                        fontSize = 12.sp, 
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontSize = 11.sp, 
+                        color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 
-                if (record.status == "DOWNLOADING") {
-                    IconButton(onClick = onPause) { Icon(Icons.Default.Pause, null) }
-                } else if (isPaused || isQueued || isFailed) {
-                    IconButton(onClick = onResume) { Icon(Icons.Default.PlayArrow, null) }
-                }
-                
-                // Hide cancel during processing to prevent corruption
-                if (!isProcessing) {
-                    IconButton(onClick = onCancel) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error) }
+                Row {
+                    if (record.status == "DOWNLOADING") {
+                        IconButton(onClick = onPause, modifier = Modifier.size(32.dp)) { 
+                            Icon(Icons.Default.Pause, null, modifier = Modifier.size(20.dp)) 
+                        }
+                    } else if (isPaused || isQueued || isFailed) {
+                        IconButton(onClick = onResume, modifier = Modifier.size(32.dp)) { 
+                            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(20.dp)) 
+                        }
+                    }
+                    
+                    if (!isProcessing) {
+                        IconButton(onClick = onCancel, modifier = Modifier.size(32.dp)) { 
+                            Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp)) 
+                        }
+                    }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             
-            if (isQueued) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    progress = { if (isQueued) 0f else if (isProcessing) 1f else progress },
+                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
+                    color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                 )
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isProcessing) {
-                        // Indeterminate progress during merging phase
-                        LinearProgressIndicator(
-                            modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)),
-                            color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        text = percentText,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black,
-                        color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = percentText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    color = if (isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
             }
             
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
             
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text(
-                        text = when {
-                            isQueued -> "Queued"
-                            isProcessing -> "Finishing up..."
-                            else -> "${formatFileSize(record.downloadedBytes)} / ${formatFileSize(record.totalBytes)}"
-                        },
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (isFailed) {
-                        Text(
-                            text = record.errorMessage ?: "Download failed",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = when {
+                        isQueued -> "Waiting..."
+                        isProcessing -> "Merging tracks..."
+                        else -> "${FileUtils.formatFileSize(record.downloadedBytes)} / ${FileUtils.formatFileSize(record.totalBytes)}"
+                    },
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 
-                if (record.status == "DOWNLOADING") {
-                    val remainingBytes = record.totalBytes - record.downloadedBytes
-                    val eta = if (remainingBytes > 0 && speed > 0) remainingBytes / speed else 0L
-                    
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = if (speed > 0) "${formatFileSize(speed)}/s" else "Calculating...",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = if (eta > 0) "Remaining: ~${formatEta(eta)}" else "Finishing...",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                if (record.status == "DOWNLOADING" && speed > 0) {
+                    Text(
+                        text = "${FileUtils.formatFileSize(speed)}/s",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * Modernized HistoryItem with decreased height for a more compact look.
+ * Restored to the first iteration settings as requested.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryItem(
@@ -207,54 +181,47 @@ fun HistoryItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .combinedClickable(
+            .padding(vertical = 3.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) 
+            else MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp).fillMaxWidth().combinedClickable(
                 onClick = onOpen,
                 onLongClick = onLongClick
             ),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) 
-            else MaterialTheme.colorScheme.surface
-        ),
-        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)) 
-                 else BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-    ) {
-        Row(
-            modifier = Modifier.padding(10.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer),
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                if (isSelected) {
-                    Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                } else if (!record.thumbnailUrl.isNullOrEmpty()) {
+                if (!record.thumbnailUrl.isNullOrEmpty()) {
                     AsyncImage(
                         model = record.thumbnailUrl,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
-                    // Media Type Overlay
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (record.mediaType == "audio") Icons.Default.MusicNote else Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.padding(2.dp).size(10.dp),
-                            tint = Color.White
-                        )
-                    }
-                } else {
+                }
+                
+                // Icon Overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
-                        imageVector = if (record.mediaType == "audio") Icons.Default.AudioFile else Icons.Default.VideoFile,
+                        imageVector = if (record.mediaType == "audio") Icons.Default.MusicNote else Icons.Default.PlayArrow,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -262,9 +229,8 @@ fun HistoryItem(
             Spacer(modifier = Modifier.width(12.dp))
             
             Column(modifier = Modifier.weight(1f)) {
-                Text(record.fileName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val typeLabel = if (record.mediaType == "audio") "Audio" else "Video"
-                Text("$typeLabel • ${record.quality} • ${formatFileSize(record.totalBytes)} • ${record.format.uppercase()}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(record.fileName, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${record.platform.uppercase()} • ${record.quality} • ${FileUtils.formatFileSize(record.totalBytes)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             
             if (isSelectionMode) {
@@ -274,22 +240,17 @@ fun HistoryItem(
                     modifier = Modifier.size(24.dp)
                 )
             } else {
-                IconButton(onClick = onShare) {
-                    Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.DeleteOutline, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                Row {
+                    IconButton(onClick = onShare, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Delete, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
     }
-}
-
-fun formatFileSize(size: Long): String {
-    if (size <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB")
-    val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
-    return "%.1f %s".format(size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }
 
 fun formatEta(seconds: Long): String {

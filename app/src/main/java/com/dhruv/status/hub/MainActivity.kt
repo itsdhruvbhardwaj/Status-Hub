@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
             val snackbarHostState = remember { SnackbarHostState() }
             val scope = rememberCoroutineScope()
             
-            // Get ViewModel to trigger sync
+            // Get ViewModel
             val downloadViewModel: DownloadViewModel = viewModel()
 
             // Update Listener for Flexible Updates
@@ -133,11 +133,7 @@ class MainActivity : ComponentActivity() {
             // Request Permissions (Notifications & Storage)
             val permissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
-            ) { permissions ->
-                if (permissions.values.any { it }) {
-                    downloadViewModel.syncOfflineFiles(context)
-                }
-            }
+            ) { /* Syncing disabled to prevent fetching older files */ }
 
             LaunchedEffect(Unit) {
                 val permissions = mutableListOf<String>()
@@ -149,7 +145,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Storage Permissions for scanning files from previous installations
+                // Storage Permissions
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED)
                         permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
@@ -165,8 +161,6 @@ class MainActivity : ComponentActivity() {
 
                 if (permissions.isNotEmpty()) {
                     permissionLauncher.launch(permissions.toTypedArray())
-                } else {
-                    downloadViewModel.syncOfflineFiles(context)
                 }
             }
             
@@ -200,13 +194,6 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(isOnboardingComplete(context)) 
                 }
                 
-                // Sync offline files once when onboarding is finished
-                LaunchedEffect(onboardingFinished) {
-                    if (onboardingFinished) {
-                        downloadViewModel.syncOfflineFiles(context)
-                    }
-                }
-
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbarHostState) }
                 ) { padding ->
@@ -229,12 +216,14 @@ class MainActivity : ComponentActivity() {
                                         sharedUrlState.value = null
                                         currentScreen = "home" 
                                     },
-                                    onNavigateToRecentDownloads = { currentScreen = "recent_downloads" }
+                                    onNavigateToRecentDownloads = { currentScreen = "recent_downloads" },
+                                    onThemeChange = { themeRefreshTrigger.value += 1 }
                                 )
                             }
                             "recent_downloads" -> {
                                 RecentDownloadsScreen(
                                     onBack = { currentScreen = "home" },
+                                    onThemeChange = { themeRefreshTrigger.value += 1 },
                                     viewModel = downloadViewModel
                                 )
                             }
@@ -256,7 +245,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
             if (info.installStatus == InstallStatus.DOWNLOADED) {
-                // If update is already downloaded, it will trigger the listener or handle here if needed.
+                // Update already downloaded
             }
         }
     }
