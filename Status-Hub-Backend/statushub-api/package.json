@@ -1,14 +1,15 @@
 {
   "name": "statushub-api",
-  "version": "1.0.0",
-  "description": "Secure FastSaver media resolver proxy for Status Hub",
+  "version": "2.0.0",
+  "description": "Shared public media resolver and download API for Android and web",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
