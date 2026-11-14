@@ -34,9 +34,12 @@ export function publicSource(value) {
 }
 
 export function extractorError(stderr) {
-    if (/login|log in|sign in|cookies|private|authentication/i.test(stderr)) return new ApiError('AUTH_REQUIRED', 'This content requires login. Only publicly accessible media is supported.');
-    if (/unavailable|removed|not available|expired|404/i.test(stderr)) return new ApiError('UNAVAILABLE', 'This media is unavailable, removed or expired.');
+    // Bot challenges can contain both "sign in" and cookie advice for public videos.
+    if (/not a bot|confirm you.re|automated requests|unusual traffic|captcha/i.test(stderr)) return new ApiError('UPSTREAM_BOT_CHECK', 'The source is blocking requests from our media server. This does not necessarily mean the video is private. Try again later.', 503);
     if (/429|rate.limit|too many/i.test(stderr)) return new ApiError('UPSTREAM_RATE_LIMIT', 'The source is limiting requests. Try again later.', 503);
+    if (/sign in to confirm your age|age.restricted/i.test(stderr)) return new ApiError('AGE_RESTRICTED', 'This media requires age verification and is not supported.');
+    if (/login|log in|sign in|private|authentication/i.test(stderr)) return new ApiError('AUTH_REQUIRED', 'This content requires login. Only publicly accessible media is supported.');
+    if (/unavailable|removed|not available|expired|404/i.test(stderr)) return new ApiError('UNAVAILABLE', 'This media is unavailable, removed or expired.');
     return new ApiError('EXTRACTION_FAILED', 'The source could not be read. Try again later or use another public link.', 502);
 }
 

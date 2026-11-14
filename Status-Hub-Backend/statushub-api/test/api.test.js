@@ -10,6 +10,13 @@ const metadata = { id: 'demo', title: 'Demo', webpage_url: 'https://www.youtube.
     ...[48, 64, 128, 160, 256].map((abr, i) => ({ format_id: `a${i}`, url: 'https://media.example/audio', ext: 'webm', vcodec: 'none', acodec: 'opus', abr })),
     { format_id: 'v1', url: 'https://media.example/video', ext: 'mp4', vcodec: 'avc1', acodec: 'none', height: 1080 },
 ] };
+test('distinguishes public-video bot checks from private content and cookie advice', () => {
+    assert.equal(extractorError("Sign in to confirm you’re not a bot. Use --cookies.").code, 'UPSTREAM_BOT_CHECK');
+    assert.equal(extractorError('HTTP Error 429: Too many requests. Use cookies.').code, 'UPSTREAM_RATE_LIMIT');
+    assert.equal(extractorError('Sign in to confirm your age').code, 'AGE_RESTRICTED');
+    assert.equal(extractorError('This video is private. Please log in.').code, 'AUTH_REQUIRED');
+    assert.equal(extractorError('Extraction failed. See cookies documentation.').code, 'EXTRACTION_FAILED');
+});
 test('rejects arbitrary hosts, credentials and unsafe schemes', () => {
     for (const url of ['http://127.0.0.1/', 'https://youtube.com.evil.test/watch?v=x', 'https://u:p@youtube.com/watch?v=x', 'https://youtube.com:444/watch?v=x', 'file:///etc/passwd']) assert.throws(() => publicSource(url));
     assert.equal(publicSource('https://fb.watch/example/').platform, 'facebook');
